@@ -9,8 +9,10 @@ use open_multi_agent::{
 };
 
 fn openrouter_api_key() -> String {
-    std::env::var("OPENROUTER_API_KEY")
-        .expect("OPENROUTER_API_KEY environment variable must be set")
+    let key = std::env::var("OPENROUTER_API_KEY")
+        .expect("OPENROUTER_API_KEY environment variable must be set");
+    // Strip surrounding quotes that Windows cmd users often include accidentally.
+    key.trim_matches('"').to_string()
 }
 
 const OPENROUTER_BASE_URL: &str = "https://openrouter.ai/api/v1";

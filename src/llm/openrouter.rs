@@ -227,13 +227,28 @@ impl OpenRouterAdapter {
         let mut content: Vec<ContentBlock> = Vec::new();
 
         // Extract text content.
+        // OpenRouter models may return content as a plain string OR as a JSON
+        // array of content blocks e.g. [{"type":"text","text":"..."},{"type":"thinking",...}].
         if let Some(text_val) = &choice.message.content {
-            let text = match text_val {
-                serde_json::Value::String(s) => s.clone(),
-                _ => text_val.to_string(),
-            };
-            if !text.is_empty() {
-                content.push(ContentBlock::Text { text });
+            match text_val {
+                serde_json::Value::String(s) if !s.is_empty() => {
+                    content.push(ContentBlock::Text { text: s.clone() });
+                }
+                serde_json::Value::Array(blocks) => {
+                    for block in blocks {
+                        if let Some(t) = block.get("type").and_then(|v| v.as_str()) {
+                            if t == "text" {
+                                if let Some(text) = block.get("text").and_then(|v| v.as_str()) {
+                                    if !text.is_empty() {
+                                        content.push(ContentBlock::Text { text: text.to_string() });
+                                    }
+                                }
+                            }
+                            // "thinking" / "reasoning" blocks are intentionally skipped.
+                        }
+                    }
+                }
+                _ => {}
             }
         }
 
