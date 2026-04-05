@@ -538,7 +538,7 @@ impl OpenMultiAgent {
                 let registry = Arc::new(Mutex::new(registry));
                 let executor = Arc::new(ToolExecutor::new(Arc::clone(&registry)));
 
-                let mut agent = Agent::new(agent_config.clone(), registry, executor);
+                let agent = Agent::new(agent_config.clone(), registry, executor);
 
                 self.emit_progress(&format!(
                     "Starting task: {} (agent: {})",
