@@ -6,9 +6,7 @@
 ///
 /// Run:
 ///   cargo run --example 02_multi_turn_chat
-use open_multi_agent::{
-    agent::Agent, create_adapter, AgentConfig, ToolExecutor, ToolRegistry,
-};
+use open_multi_agent::{agent::Agent, create_adapter, AgentConfig, ToolExecutor, ToolRegistry};
 use std::sync::Arc;
 use tokio::sync::Mutex;
 
@@ -34,9 +32,7 @@ async fn main() {
     let config = AgentConfig {
         name: "tutor".to_string(),
         model: "qwen/qwen3.6-plus:free".to_string(),
-        system_prompt: Some(
-            "You are a patient math tutor. Give short, clear answers.".to_string(),
-        ),
+        system_prompt: Some("You are a patient math tutor. Give short, clear answers.".to_string()),
         ..Default::default()
     };
 

@@ -5,7 +5,7 @@
 ///
 /// Run:
 ///   cargo run --example 01_single_agent
-use open_multi_agent::{AgentConfig, OrchestratorConfig, OpenMultiAgent};
+use open_multi_agent::{AgentConfig, OpenMultiAgent, OrchestratorConfig};
 
 fn api_key() -> String {
     dotenvy::dotenv().ok();
@@ -30,7 +30,9 @@ async fn main() {
 
     let agent = AgentConfig {
         name: "assistant".to_string(),
-        system_prompt: Some("You are a concise, factual assistant. Keep answers under 3 sentences.".to_string()),
+        system_prompt: Some(
+            "You are a concise, factual assistant. Keep answers under 3 sentences.".to_string(),
+        ),
         ..Default::default()
     };
 

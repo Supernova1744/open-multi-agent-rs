@@ -7,7 +7,7 @@
 ///
 /// Run:
 ///   cargo run --example 05_structured_output
-use open_multi_agent::{AgentConfig, OrchestratorConfig, OpenMultiAgent};
+use open_multi_agent::{AgentConfig, OpenMultiAgent, OrchestratorConfig};
 
 fn api_key() -> String {
     dotenvy::dotenv().ok();

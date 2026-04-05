@@ -14,10 +14,10 @@ use futures::future::BoxFuture;
 use open_multi_agent::{
     compute_retry_delay, create_task,
     types::{AgentRunResult, Task, TokenUsage},
-    OrchestratorConfig, OpenMultiAgent, TeamConfig, AgentConfig,
+    AgentConfig, OpenMultiAgent, OrchestratorConfig, TeamConfig,
 };
-use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::Arc;
 
 fn api_key() -> String {
     dotenvy::dotenv().ok();
@@ -73,7 +73,10 @@ async fn main() {
                         success: false,
                         output: format!("Attempt {} failed.", n + 1),
                         messages: vec![],
-                        token_usage: TokenUsage { input_tokens: 10, output_tokens: 5 },
+                        token_usage: TokenUsage {
+                            input_tokens: 10,
+                            output_tokens: 5,
+                        },
                         tool_calls: vec![],
                         turns: 1,
                         structured: None,
@@ -83,7 +86,10 @@ async fn main() {
                         success: true,
                         output: "Finally succeeded!".to_string(),
                         messages: vec![],
-                        token_usage: TokenUsage { input_tokens: 10, output_tokens: 5 },
+                        token_usage: TokenUsage {
+                            input_tokens: 10,
+                            output_tokens: 5,
+                        },
                         tool_calls: vec![],
                         turns: 1,
                         structured: None,
@@ -93,8 +99,12 @@ async fn main() {
         },
         &task,
         Some(Arc::new(|attempt: u32, max: u32, err: String, delay: u64| {
-            println!("  [retry {}/{}] \"{}\" — waiting {}ms", attempt, max, err, delay);
-        }) as Arc<dyn Fn(u32, u32, String, u64) + Send + Sync>),
+            println!(
+                "  [retry {}/{}] \"{}\" — waiting {}ms",
+                attempt, max, err, delay
+            );
+        })
+            as Arc<dyn Fn(u32, u32, String, u64) + Send + Sync>),
     )
     .await;
 
@@ -131,7 +141,10 @@ async fn main() {
                     );
                     // Approve round 0, reject round 1+.
                     let approved = round_n == 0;
-                    println!("[approval gate] decision: {}", if approved { "APPROVE" } else { "REJECT" });
+                    println!(
+                        "[approval gate] decision: {}",
+                        if approved { "APPROVE" } else { "REJECT" }
+                    );
                     approved
                 })
             },
@@ -164,7 +177,12 @@ async fn main() {
         Ok(result) => {
             println!("\nPipeline done. success={}", result.success);
             for (id, r) in &result.agent_results {
-                println!("  task {}: {} (success={})", &id[..8], r.output.trim(), r.success);
+                println!(
+                    "  task {}: {} (success={})",
+                    &id[..8],
+                    r.output.trim(),
+                    r.success
+                );
             }
         }
         Err(e) => eprintln!("Error: {}", e),

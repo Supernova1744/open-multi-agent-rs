@@ -10,10 +10,12 @@
 ///   cargo run --example 04_custom_tool
 use async_trait::async_trait;
 use open_multi_agent::{
-    agent::Agent, create_adapter, AgentConfig, ToolExecutor, ToolRegistry,
+    agent::Agent,
+    create_adapter,
     error::Result,
     tool::Tool,
     types::{LLMToolDef, ToolResult, ToolUseContext},
+    AgentConfig, ToolExecutor, ToolRegistry,
 };
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -61,10 +63,7 @@ impl Tool for WordCountTool {
         input: &HashMap<String, serde_json::Value>,
         _context: &ToolUseContext,
     ) -> Result<ToolResult> {
-        let text = input
-            .get("text")
-            .and_then(|v| v.as_str())
-            .unwrap_or("");
+        let text = input.get("text").and_then(|v| v.as_str()).unwrap_or("");
 
         let count = text.split_whitespace().count();
         println!("  [tool: word_count called → {} words]", count);

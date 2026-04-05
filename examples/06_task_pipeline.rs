@@ -9,9 +9,7 @@
 ///
 /// Run:
 ///   cargo run --example 06_task_pipeline
-use open_multi_agent::{
-    create_task, AgentConfig, OrchestratorConfig, OpenMultiAgent, TeamConfig,
-};
+use open_multi_agent::{create_task, AgentConfig, OpenMultiAgent, OrchestratorConfig, TeamConfig};
 
 fn api_key() -> String {
     dotenvy::dotenv().ok();
@@ -101,8 +99,7 @@ async fn main() {
             println!("Pipeline success: {}\n", result.success);
             println!(
                 "Total tokens — input: {}, output: {}\n",
-                result.total_token_usage.input_tokens,
-                result.total_token_usage.output_tokens
+                result.total_token_usage.input_tokens, result.total_token_usage.output_tokens
             );
 
             // Print each stage's output in order.

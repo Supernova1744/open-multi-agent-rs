@@ -24,7 +24,7 @@ use open_multi_agent::{
     create_task,
     messaging::MessageBus,
     types::{AgentConfig, Task, TraceEvent},
-    AgentStatus, OrchestratorConfig, OpenMultiAgent, TeamConfig,
+    AgentStatus, OpenMultiAgent, OrchestratorConfig, TeamConfig,
 };
 use std::sync::{Arc, Mutex};
 
@@ -93,22 +93,23 @@ fn trace_printer() -> Arc<dyn Fn(TraceEvent) + Send + Sync> {
 // Approval gate — asks (auto-approves here; change to false to test rejection)
 // ---------------------------------------------------------------------------
 
-fn approval_gate() -> Arc<dyn Fn(Vec<Task>, Vec<Task>) -> BoxFuture<'static, bool> + Send + Sync>
-{
-    Arc::new(|completed: Vec<Task>, pending: Vec<Task>| -> BoxFuture<'static, bool> {
-        Box::pin(async move {
-            println!(
-                "\n[approval gate] {} task(s) done. {} task(s) pending.",
-                completed.len(),
-                pending.len()
-            );
-            for t in &pending {
-                println!("  → pending: {}", t.title);
-            }
-            println!("[approval gate] Auto-approving.\n");
-            true // return false here to abort the remaining tasks
-        })
-    })
+fn approval_gate() -> Arc<dyn Fn(Vec<Task>, Vec<Task>) -> BoxFuture<'static, bool> + Send + Sync> {
+    Arc::new(
+        |completed: Vec<Task>, pending: Vec<Task>| -> BoxFuture<'static, bool> {
+            Box::pin(async move {
+                println!(
+                    "\n[approval gate] {} task(s) done. {} task(s) pending.",
+                    completed.len(),
+                    pending.len()
+                );
+                for t in &pending {
+                    println!("  → pending: {}", t.title);
+                }
+                println!("[approval gate] Auto-approving.\n");
+                true // return false here to abort the remaining tasks
+            })
+        },
+    )
 }
 
 // ---------------------------------------------------------------------------
@@ -226,8 +227,7 @@ async fn main() {
             println!("Pipeline complete — success: {}", result.success);
             println!(
                 "Total tokens — input: {}, output: {}\n",
-                result.total_token_usage.input_tokens,
-                result.total_token_usage.output_tokens
+                result.total_token_usage.input_tokens, result.total_token_usage.output_tokens
             );
 
             // Print each agent's output with a header.
@@ -238,11 +238,7 @@ async fn main() {
             ];
             for (agent_name, label) in labels {
                 // Find the result that belongs to this agent.
-                if let Some(r) = result
-                    .agent_results
-                    .values()
-                    .find(|r| r.messages.len() > 0)
-                {
+                if let Some(r) = result.agent_results.values().find(|r| r.messages.len() > 0) {
                     // Fallback: just print in order.
                     let _ = (agent_name, label, r);
                 }

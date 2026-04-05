@@ -62,9 +62,7 @@ async fn main() {
                 println!("\n{}", "-".repeat(60));
                 println!(
                     "\nDone. Turns: {}, Tokens: in={} out={}",
-                    result.turns,
-                    result.token_usage.input_tokens,
-                    result.token_usage.output_tokens
+                    result.turns, result.token_usage.input_tokens, result.token_usage.output_tokens
                 );
             }
             StreamEvent::Error(msg) => {

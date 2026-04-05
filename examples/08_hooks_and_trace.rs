@@ -12,7 +12,7 @@ use futures::future::BoxFuture;
 use open_multi_agent::{
     error::Result,
     types::{AgentConfig, AgentRunResult, BeforeRunHookContext, TraceEvent},
-    AgentConfig as _, OrchestratorConfig, OpenMultiAgent,
+    AgentConfig as _, OpenMultiAgent, OrchestratorConfig,
 };
 
 fn api_key() -> String {
@@ -37,10 +37,7 @@ async fn main() {
             match event {
                 TraceEvent::LlmCall(t) => println!(
                     "[trace] LLM call  turn={} tokens={}in+{}out  {}ms",
-                    t.turn,
-                    t.tokens.input_tokens,
-                    t.tokens.output_tokens,
-                    t.base.duration_ms
+                    t.turn, t.tokens.input_tokens, t.tokens.output_tokens, t.base.duration_ms
                 ),
                 TraceEvent::Agent(t) => println!(
                     "[trace] Agent run turns={} total_tokens={}",
