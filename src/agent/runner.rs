@@ -16,8 +16,8 @@ use crate::tool::{ToolExecutor, ToolRegistry};
 use crate::trace::{emit_trace, now_ms};
 use crate::types::{
     AgentConfig, AgentInfo, AgentTrace, ContentBlock, LlmCallTrace, LLMChatOptions, LLMMessage,
-    OnTraceFn, Role, RunResult, StreamEvent, ToolCallRecord, ToolCallTrace, ToolResultBlock,
-    ToolUseBlock, ToolUseContext, TokenUsage, TraceEventBase,
+    LLMStreamDelta, OnTraceFn, Role, RunResult, StreamEvent, ToolCallRecord, ToolCallTrace,
+    ToolResultBlock, ToolUseBlock, ToolUseContext, TokenUsage, TraceEventBase,
 };
 
 // ---------------------------------------------------------------------------
@@ -144,15 +144,42 @@ impl AgentRunner {
                 }
                 turns += 1;
 
-                // Step 1: Call LLM.
+                // Step 1: Call LLM via streaming — yields text deltas in real time,
+                // then a final Complete with tool calls and usage.
                 let llm_start = now_ms();
-                let response = match adapter.chat(&conversation, &chat_options).await {
-                    Ok(r) => r,
-                    Err(e) => {
-                        yield StreamEvent::Error(e.to_string());
+
+                let conv_snap: Vec<LLMMessage> = conversation.clone();
+                let llm_stream = adapter.stream(&conv_snap, &chat_options);
+                tokio::pin!(llm_stream);
+
+                let mut response = None;
+                let mut text = String::new();
+
+                use futures::StreamExt as _;
+                while let Some(delta) = llm_stream.next().await {
+                    match delta {
+                        Ok(LLMStreamDelta::Text(chunk)) => {
+                            text.push_str(&chunk);
+                            yield StreamEvent::Text(chunk);
+                        }
+                        Ok(LLMStreamDelta::Complete(resp)) => {
+                            response = Some(resp);
+                        }
+                        Err(e) => {
+                            yield StreamEvent::Error(e.to_string());
+                            return;
+                        }
+                    }
+                }
+
+                let response = match response {
+                    Some(r) => r,
+                    None => {
+                        yield StreamEvent::Error("LLM stream ended without a Complete event".to_string());
                         return;
                     }
                 };
+
                 let llm_end = now_ms();
 
                 // Emit llm_call trace.
@@ -172,7 +199,8 @@ impl AgentRunner {
 
                 total_usage = total_usage.add(&response.usage);
 
-                // Step 2: Build assistant message.
+                // Step 2: Build assistant message from the complete response.
+                // Text is already in response.content (put there by the SSE impl).
                 let assistant_msg = LLMMessage {
                     role: Role::Assistant,
                     content: response.content.clone(),
@@ -182,15 +210,7 @@ impl AgentRunner {
                     cb(&assistant_msg);
                 }
 
-                // Extract text and yield it.
-                let text: String = response.content.iter()
-                    .filter_map(|b| b.as_text())
-                    .collect::<Vec<_>>()
-                    .join("");
-
-                if !text.is_empty() {
-                    yield StreamEvent::Text(text.clone());
-                }
+                // Text was already yielded as streaming deltas above.
 
                 // Extract tool_use blocks and yield each.
                 let tool_use_blocks: Vec<ToolUseBlock> = response.content.iter()

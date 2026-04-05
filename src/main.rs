@@ -8,6 +8,10 @@ use open_multi_agent::{
     AgentConfig, OrchestratorConfig, OpenMultiAgent, TeamConfig, create_task,
 };
 
+fn load_env() {
+    dotenvy::dotenv().ok(); // silently ignore if .env is absent
+}
+
 fn openrouter_api_key() -> String {
     let key = std::env::var("OPENROUTER_API_KEY")
         .expect("OPENROUTER_API_KEY environment variable must be set");
@@ -219,6 +223,7 @@ async fn test_team_coordinator() {
 
 #[tokio::main]
 async fn main() {
+    load_env();
     println!("open-multi-agent-rs — Rust port demo");
     println!("Using model: {}", MODEL);
     println!("Using API: OpenRouter");

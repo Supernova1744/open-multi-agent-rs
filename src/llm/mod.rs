@@ -3,14 +3,43 @@ pub mod openai;
 pub mod openrouter;
 
 use async_trait::async_trait;
+use futures::Stream;
+use std::pin::Pin;
+
 use crate::error::Result;
-use crate::types::{LLMChatOptions, LLMMessage, LLMResponse};
+use crate::types::{LLMChatOptions, LLMMessage, LLMResponse, LLMStreamDelta};
+
+/// Convenience alias for a boxed, send-safe stream of stream deltas.
+pub type LLMStream<'a> = Pin<Box<dyn Stream<Item = Result<LLMStreamDelta>> + Send + 'a>>;
 
 /// Provider-agnostic interface every LLM backend must implement.
 #[async_trait]
 pub trait LLMAdapter: Send + Sync {
     fn name(&self) -> &str;
+
+    /// Non-streaming: waits for the full response.
     async fn chat(&self, messages: &[LLMMessage], options: &LLMChatOptions) -> Result<LLMResponse>;
+
+    /// Streaming: yields `Text` deltas as they arrive, then one `Complete`.
+    ///
+    /// Default implementation calls `chat()` and wraps the result — no real
+    /// streaming, but a correct fallback. Override in adapters that support SSE.
+    fn stream<'a>(&'a self, messages: &'a [LLMMessage], options: &'a LLMChatOptions) -> LLMStream<'a> {
+        // Clone what we need to own inside the stream.
+        let messages = messages.to_vec();
+        let options = options.clone();
+        Box::pin(async_stream::try_stream! {
+            // Extract text before moving resp into Complete.
+            let resp = self.chat(&messages, &options).await?;
+            let text: String = resp.content.iter()
+                .filter_map(|b| b.as_text())
+                .collect();
+            if !text.is_empty() {
+                yield LLMStreamDelta::Text(text);
+            }
+            yield LLMStreamDelta::Complete(resp);
+        })
+    }
 }
 
 /// Create an adapter for the given provider.

@@ -1,24 +1,27 @@
 /// OpenAI-compatible adapter that works with OpenRouter, OpenAI, Ollama, vLLM, etc.
 use async_trait::async_trait;
+use futures::StreamExt as _;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
 use crate::error::{AgentError, Result};
 use crate::types::{
-    ContentBlock, LLMChatOptions, LLMMessage, LLMResponse, LLMToolDef, Role, TokenUsage,
-    ToolUseBlock,
+    ContentBlock, LLMChatOptions, LLMMessage, LLMResponse, LLMStreamDelta, LLMToolDef, Role,
+    TokenUsage, ToolUseBlock,
 };
 
-use super::LLMAdapter;
+use super::{LLMAdapter, LLMStream};
 
 // ---------------------------------------------------------------------------
-// OpenAI-compatible wire types
+// OpenAI-compatible wire types (request)
 // ---------------------------------------------------------------------------
 
 #[derive(Debug, Serialize)]
 struct ChatRequest {
     model: String,
     messages: Vec<OAIMessage>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    stream: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]
     tools: Option<Vec<OAITool>>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -27,11 +30,62 @@ struct ChatRequest {
     temperature: Option<f32>,
 }
 
+// ---------------------------------------------------------------------------
+// SSE / streaming wire types
+// ---------------------------------------------------------------------------
+
+#[derive(Debug, Deserialize)]
+struct SSEChunk {
+    id: Option<String>,
+    #[serde(default)]
+    choices: Vec<SSEChoice>,
+    /// Some providers send final usage in the last chunk.
+    usage: Option<OAIUsage>,
+}
+
+#[derive(Debug, Deserialize)]
+struct SSEChoice {
+    delta: SSEDelta,
+    finish_reason: Option<String>,
+}
+
+#[derive(Debug, Deserialize, Default)]
+struct SSEDelta {
+    content: Option<String>,
+    reasoning_content: Option<String>,
+    #[serde(default)]
+    tool_calls: Option<Vec<SSEToolCall>>,
+}
+
+#[derive(Debug, Deserialize)]
+struct SSEToolCall {
+    index: usize,
+    id: Option<String>,
+    function: Option<SSEFunction>,
+}
+
+#[derive(Debug, Deserialize)]
+struct SSEFunction {
+    name: Option<String>,
+    arguments: Option<String>,
+}
+
+#[derive(Debug, Default)]
+struct AccToolCall {
+    id: String,
+    name: String,
+    arguments: String,
+}
+
 #[derive(Debug, Serialize, Deserialize, Clone)]
 struct OAIMessage {
     role: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     content: Option<serde_json::Value>,
+    /// Reasoning / thinking output (Qwen3, DeepSeek-R1, o1, etc.).
+    /// Used as fallback when `content` is null or empty.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    reasoning_content: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     tool_calls: Option<Vec<OAIToolCall>>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -86,6 +140,73 @@ struct OAIChoice {
 struct OAIUsage {
     prompt_tokens: Option<u64>,
     completion_tokens: Option<u64>,
+    /// Some providers only return total_tokens. Used as fallback.
+    total_tokens: Option<u64>,
+}
+
+// ---------------------------------------------------------------------------
+// Text extraction helper
+// ---------------------------------------------------------------------------
+
+/// Extract displayable text from an OAIMessage using a fallback chain:
+///   1. `content` string (standard)
+///   2. `content` array of {type,text} blocks (some providers)
+///   3. `reasoning_content` (Qwen3, DeepSeek-R1, o1 thinking field)
+///
+/// Strips `<think>…</think>` wrappers that some models leave in content.
+fn extract_text_from_message(msg: &OAIMessage) -> String {
+    // Try content field first.
+    if let Some(val) = &msg.content {
+        let text = match val {
+            serde_json::Value::String(s) => s.clone(),
+            serde_json::Value::Array(blocks) => {
+                blocks
+                    .iter()
+                    .filter(|b| {
+                        b.get("type").and_then(|t| t.as_str()) == Some("text")
+                    })
+                    .filter_map(|b| b.get("text").and_then(|t| t.as_str()))
+                    .collect::<Vec<_>>()
+                    .join("")
+            }
+            _ => String::new(),
+        };
+        let cleaned = strip_think_tags(&text);
+        if !cleaned.is_empty() {
+            return cleaned;
+        }
+    }
+
+    // Fall back to reasoning_content (Qwen3, DeepSeek-R1, o1, etc.).
+    if let Some(rc) = &msg.reasoning_content {
+        let cleaned = strip_think_tags(rc);
+        if !cleaned.is_empty() {
+            return cleaned;
+        }
+    }
+
+    String::new()
+}
+
+fn strip_think_tags_owned(text: String) -> String {
+    strip_think_tags(&text)
+}
+
+/// Remove `<think>…</think>` wrapper blocks that reasoning models sometimes
+/// include in their output. Keeps everything outside the tags.
+fn strip_think_tags(text: &str) -> String {
+    let mut result = text.to_string();
+    loop {
+        let start = result.find("<think>");
+        let end = result.find("</think>");
+        match (start, end) {
+            (Some(s), Some(e)) if e >= s => {
+                result.replace_range(s..e + 8, ""); // 8 = len("</think>")
+            }
+            _ => break,
+        }
+    }
+    result.trim().to_string()
 }
 
 // ---------------------------------------------------------------------------
@@ -117,6 +238,7 @@ impl OpenRouterAdapter {
                 result.push(OAIMessage {
                     role: "system".to_string(),
                     content: Some(serde_json::Value::String(sys.to_string())),
+                    reasoning_content: None,
                     tool_calls: None,
                     tool_call_id: None,
                     name: None,
@@ -163,6 +285,7 @@ impl OpenRouterAdapter {
                 result.push(OAIMessage {
                     role: "tool".to_string(),
                     content: Some(serde_json::Value::String(content)),
+                    reasoning_content: None,
                     tool_calls: None,
                     tool_call_id: Some(tool_use_id),
                     name: None,
@@ -180,6 +303,7 @@ impl OpenRouterAdapter {
                 result.push(OAIMessage {
                     role: role.to_string(),
                     content: text_content,
+                    reasoning_content: None,
                     tool_calls: Some(tool_calls),
                     tool_call_id: None,
                     name: None,
@@ -188,6 +312,7 @@ impl OpenRouterAdapter {
                 result.push(OAIMessage {
                     role: role.to_string(),
                     content: Some(serde_json::Value::String(text_parts.join(""))),
+                    reasoning_content: None,
                     tool_calls: None,
                     tool_call_id: None,
                     name: None,
@@ -217,6 +342,7 @@ impl OpenRouterAdapter {
             AgentError::LlmError("Empty choices in response".to_string())
         })?;
 
+
         let finish_reason = choice.finish_reason.unwrap_or_else(|| "end_turn".to_string());
         let stop_reason = if finish_reason == "tool_calls" {
             "tool_use".to_string()
@@ -226,30 +352,15 @@ impl OpenRouterAdapter {
 
         let mut content: Vec<ContentBlock> = Vec::new();
 
-        // Extract text content.
-        // OpenRouter models may return content as a plain string OR as a JSON
-        // array of content blocks e.g. [{"type":"text","text":"..."},{"type":"thinking",...}].
-        if let Some(text_val) = &choice.message.content {
-            match text_val {
-                serde_json::Value::String(s) if !s.is_empty() => {
-                    content.push(ContentBlock::Text { text: s.clone() });
-                }
-                serde_json::Value::Array(blocks) => {
-                    for block in blocks {
-                        if let Some(t) = block.get("type").and_then(|v| v.as_str()) {
-                            if t == "text" {
-                                if let Some(text) = block.get("text").and_then(|v| v.as_str()) {
-                                    if !text.is_empty() {
-                                        content.push(ContentBlock::Text { text: text.to_string() });
-                                    }
-                                }
-                            }
-                            // "thinking" / "reasoning" blocks are intentionally skipped.
-                        }
-                    }
-                }
-                _ => {}
-            }
+        // Extract text content using a fallback chain:
+        //   1. content (string) — standard OpenAI format
+        //   2. content (array) — some models return [{type,text}] blocks
+        //   3. reasoning_content — Qwen3, DeepSeek-R1, o1 thinking output
+        //
+        // <think>…</think> wrappers are stripped before use.
+        let extracted_text = extract_text_from_message(&choice.message);
+        if !extracted_text.is_empty() {
+            content.push(ContentBlock::Text { text: extracted_text });
         }
 
         // Extract tool calls.
@@ -265,9 +376,17 @@ impl OpenRouterAdapter {
             }
         }
 
-        let usage = resp.usage.map(|u| TokenUsage {
-            input_tokens: u.prompt_tokens.unwrap_or(0),
-            output_tokens: u.completion_tokens.unwrap_or(0),
+        let usage = resp.usage.map(|u| {
+            let input = u.prompt_tokens.unwrap_or(0);
+            let output = u.completion_tokens.unwrap_or(0);
+            // If both are 0 but total_tokens is present, put total in output
+            // so token tracking is non-zero (providers differ on field names).
+            if input == 0 && output == 0 {
+                if let Some(total) = u.total_tokens {
+                    return TokenUsage { input_tokens: 0, output_tokens: total };
+                }
+            }
+            TokenUsage { input_tokens: input, output_tokens: output }
         }).unwrap_or_default();
 
         Ok(LLMResponse {
@@ -294,6 +413,7 @@ impl LLMAdapter for OpenRouterAdapter {
         let request = ChatRequest {
             model: options.model.clone(),
             messages: oai_messages,
+            stream: None, // non-streaming path
             tools: if oai_tools.as_ref().map(|t| t.is_empty()).unwrap_or(true) {
                 None
             } else {
@@ -323,7 +443,180 @@ impl LLMAdapter for OpenRouterAdapter {
             )));
         }
 
-        let chat_resp: ChatResponse = response.json().await?;
-        self.parse_response(chat_resp, &options.model)
+        // Read raw body so we can log it on parse failure or empty content.
+        let raw_body = response.text().await.unwrap_or_default();
+
+        let chat_resp: ChatResponse = match serde_json::from_str(&raw_body) {
+            Ok(r) => r,
+            Err(e) => {
+                return Err(AgentError::LlmError(format!(
+                    "Failed to parse response: {}\nBody: {}",
+                    e,
+                    &raw_body[..raw_body.len().min(500)]
+                )));
+            }
+        };
+
+        let result = self.parse_response(chat_resp, &options.model)?;
+
+        // Warn when the model returned no usable text content.
+        if result.content.is_empty() || result.content.iter().all(|b| b.as_text().map(|t| t.is_empty()).unwrap_or(true)) {
+            eprintln!(
+                "[openrouter] WARNING: empty content from model '{}'. Raw body snippet:\n{}",
+                options.model,
+                &raw_body[..raw_body.len().min(800)]
+            );
+        }
+
+        Ok(result)
+    }
+
+    fn stream<'a>(&'a self, messages: &'a [LLMMessage], options: &'a LLMChatOptions) -> LLMStream<'a> {
+        let messages = messages.to_vec();
+        let options = options.clone();
+        let client = self.client.clone();
+        let api_key = self.api_key.clone();
+        let base_url = self.base_url.clone();
+
+        Box::pin(async_stream::try_stream! {
+            let oai_messages = self.to_oai_messages(&messages, options.system_prompt.as_deref());
+            let oai_tools = options.tools.as_ref().map(|t| Self::to_oai_tools(t));
+
+            let request = ChatRequest {
+                model: options.model.clone(),
+                messages: oai_messages,
+                stream: Some(true),
+                tools: if oai_tools.as_ref().map(|t| t.is_empty()).unwrap_or(true) { None } else { oai_tools },
+                max_tokens: options.max_tokens,
+                temperature: options.temperature,
+            };
+
+            let url = format!("{}/chat/completions", base_url.trim_end_matches('/'));
+
+            let http_resp = client
+                .post(&url)
+                .header("Authorization", format!("Bearer {}", api_key))
+                .header("Content-Type", "application/json")
+                .json(&request)
+                .send()
+                .await
+                .map_err(|e| AgentError::from(e))?;
+
+            if !http_resp.status().is_success() {
+                let status = http_resp.status();
+                let body = http_resp.text().await.unwrap_or_default();
+                Err(AgentError::LlmError(format!("HTTP {}: {}", status, body)))?;
+                return;
+            }
+
+            // ── SSE parsing ────────────────────────────────────────────────
+            let mut byte_stream = http_resp.bytes_stream();
+            let mut buf = String::new();
+
+            // State accumulated across chunks.
+            let mut acc_tools: Vec<AccToolCall> = Vec::new();
+            let mut finish_reason = String::from("end_turn");
+            let mut resp_id = String::new();
+            let mut total_input = 0u64;
+            let mut total_output = 0u64;
+            // Collect full text so we can include it in Complete.
+            let mut full_text = String::new();
+
+            'sse: while let Some(chunk) = byte_stream.next().await {
+                let chunk = chunk.map_err(|e| AgentError::from(e))?;
+                buf.push_str(&String::from_utf8_lossy(&chunk));
+
+                // Process every complete line in the buffer.
+                loop {
+                    match buf.find('\n') {
+                        None => break,
+                        Some(nl) => {
+                            let line = buf[..nl].trim().to_string();
+                            buf = buf[nl + 1..].to_string();
+
+                            if !line.starts_with("data:") {
+                                continue;
+                            }
+                            let data = line["data:".len()..].trim();
+                            if data == "[DONE]" {
+                                break 'sse;
+                            }
+
+                            let sse: SSEChunk = match serde_json::from_str(data) {
+                                Ok(c) => c,
+                                Err(_) => continue, // skip malformed chunks
+                            };
+
+                            if let Some(id) = sse.id { resp_id = id; }
+                            if let Some(u) = sse.usage {
+                                total_input = u.prompt_tokens.unwrap_or(total_input);
+                                total_output = u.completion_tokens.unwrap_or(total_output);
+                                // total_tokens fallback
+                                if total_input == 0 && total_output == 0 {
+                                    if let Some(t) = u.total_tokens { total_output = t; }
+                                }
+                            }
+
+                            for choice in sse.choices {
+                                if let Some(fr) = choice.finish_reason {
+                                    if fr == "tool_calls" { finish_reason = "tool_use".to_string(); }
+                                    else if !fr.is_empty() { finish_reason = "end_turn".to_string(); }
+                                }
+
+                                // ── Text delta ──────────────────────────────
+                                let text_piece = choice.delta.content
+                                    .filter(|s| !s.is_empty())
+                                    .or_else(|| choice.delta.reasoning_content.filter(|s| !s.is_empty()))
+                                    .map(|s| strip_think_tags_owned(s));
+
+                                if let Some(text) = text_piece {
+                                    if !text.is_empty() {
+                                        full_text.push_str(&text);
+                                        yield LLMStreamDelta::Text(text);
+                                    }
+                                }
+
+                                // ── Tool call accumulation ──────────────────
+                                if let Some(tool_calls) = choice.delta.tool_calls {
+                                    for tc in tool_calls {
+                                        let idx = tc.index;
+                                        while acc_tools.len() <= idx {
+                                            acc_tools.push(AccToolCall::default());
+                                        }
+                                        let acc = &mut acc_tools[idx];
+                                        if let Some(id) = tc.id { acc.id = id; }
+                                        if let Some(f) = tc.function {
+                                            if let Some(n) = f.name { acc.name = n; }
+                                            if let Some(a) = f.arguments { acc.arguments.push_str(&a); }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            // ── Build final LLMResponse ─────────────────────────────────────
+            let mut content: Vec<ContentBlock> = Vec::new();
+            // Include the full text so callers that only look at Complete still work.
+            if !full_text.is_empty() {
+                content.push(ContentBlock::Text { text: full_text });
+            }
+            for acc in acc_tools {
+                if acc.name.is_empty() { continue; }
+                let input: HashMap<String, serde_json::Value> =
+                    serde_json::from_str(&acc.arguments).unwrap_or_default();
+                content.push(ContentBlock::ToolUse(ToolUseBlock { id: acc.id, name: acc.name, input }));
+            }
+
+            yield LLMStreamDelta::Complete(LLMResponse {
+                id: resp_id,
+                content,
+                model: options.model.clone(),
+                stop_reason: finish_reason,
+                usage: TokenUsage { input_tokens: total_input, output_tokens: total_output },
+            });
+        })
     }
 }

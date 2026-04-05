@@ -23,7 +23,7 @@ pub struct Agent {
     registry: Arc<Mutex<ToolRegistry>>,
     executor: Arc<ToolExecutor>,
     history: Vec<LLMMessage>,
-    total_token_usage: TokenUsage,
+    pub total_token_usage: TokenUsage,
 }
 
 impl Agent {

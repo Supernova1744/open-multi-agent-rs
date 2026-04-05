@@ -184,6 +184,23 @@ pub enum TraceEvent {
 pub type OnTraceFn = Arc<dyn Fn(TraceEvent) + Send + Sync>;
 
 // ---------------------------------------------------------------------------
+// LLM streaming
+// ---------------------------------------------------------------------------
+
+/// An event emitted by `LLMAdapter::stream`.
+///
+/// `Text` events arrive in real time as the model generates tokens.
+/// `Complete` arrives once — at the very end — carrying tool calls, stop
+/// reason, and usage. Text content is NOT repeated inside `Complete.content`.
+#[derive(Debug, Clone)]
+pub enum LLMStreamDelta {
+    /// A chunk of generated text (may be a single token or a few words).
+    Text(String),
+    /// Stream finished. Carries tool-use blocks and metadata.
+    Complete(LLMResponse),
+}
+
+// ---------------------------------------------------------------------------
 // Hooks
 // ---------------------------------------------------------------------------
 

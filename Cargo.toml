@@ -11,9 +11,50 @@ path = "src/main.rs"
 name = "open_multi_agent"
 path = "src/lib.rs"
 
+[[example]]
+name = "01_single_agent"
+path = "examples/01_single_agent.rs"
+
+[[example]]
+name = "02_multi_turn_chat"
+path = "examples/02_multi_turn_chat.rs"
+
+[[example]]
+name = "03_streaming"
+path = "examples/03_streaming.rs"
+
+[[example]]
+name = "04_custom_tool"
+path = "examples/04_custom_tool.rs"
+
+[[example]]
+name = "05_structured_output"
+path = "examples/05_structured_output.rs"
+
+[[example]]
+name = "06_task_pipeline"
+path = "examples/06_task_pipeline.rs"
+
+[[example]]
+name = "07_multi_agent_system"
+path = "examples/07_multi_agent_system.rs"
+
+[[example]]
+name = "08_hooks_and_trace"
+path = "examples/08_hooks_and_trace.rs"
+
+[[example]]
+name = "09_message_bus"
+path = "examples/09_message_bus.rs"
+
+[[example]]
+name = "10_retry_and_approval"
+path = "examples/10_retry_and_approval.rs"
+
 [dependencies]
+dotenvy = "0.15"
 tokio = { version = "1", features = ["full"] }
-reqwest = { version = "0.12", features = ["json"] }
+reqwest = { version = "0.12", features = ["json", "stream"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 async-trait = "0.1"

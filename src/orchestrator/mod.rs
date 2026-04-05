@@ -19,7 +19,7 @@ use crate::memory::{InMemoryStore, MemoryStore, SharedMemory};
 use crate::task::{
     create_task,
     queue::TaskQueue,
-    scheduler::{SchedulingStrategy, Scheduler},
+    scheduler::{Scheduler, SchedulingStrategy},
 };
 use crate::tool::{built_in::register_built_in_tools, ToolExecutor, ToolRegistry};
 use crate::trace::{emit_trace, generate_run_id, now_ms};
@@ -47,9 +47,8 @@ pub struct OrchestratorConfig {
     ///
     /// Receives (`completed_tasks`, `next_tasks`). Return `true` to continue,
     /// `false` to abort (remaining tasks are skipped).
-    pub on_approval: Option<
-        Arc<dyn Fn(Vec<Task>, Vec<Task>) -> BoxFuture<'static, bool> + Send + Sync>,
-    >,
+    pub on_approval:
+        Option<Arc<dyn Fn(Vec<Task>, Vec<Task>) -> BoxFuture<'static, bool> + Send + Sync>>,
 }
 
 impl Default for OrchestratorConfig {
@@ -111,7 +110,10 @@ pub async fn execute_with_retry(
         match run().await {
             Ok(result) => {
                 let merged_usage = total_usage.add(&result.token_usage);
-                let merged = AgentRunResult { token_usage: merged_usage, ..result.clone() };
+                let merged = AgentRunResult {
+                    token_usage: merged_usage,
+                    ..result.clone()
+                };
                 if result.success {
                     return merged;
                 }
@@ -124,7 +126,10 @@ pub async fn execute_with_retry(
                     }
                     tokio::time::sleep(tokio::time::Duration::from_millis(delay)).await;
                 } else {
-                    return AgentRunResult { token_usage: total_usage.clone(), ..merged };
+                    return AgentRunResult {
+                        token_usage: total_usage.clone(),
+                        ..merged
+                    };
                 }
             }
             Err(e) => {
@@ -271,7 +276,9 @@ impl OpenMultiAgent {
 
         let coord_messages = vec![LLMMessage {
             role: Role::User,
-            content: vec![ContentBlock::Text { text: coordinator_prompt }],
+            content: vec![ContentBlock::Text {
+                text: coordinator_prompt,
+            }],
         }];
 
         let coord_chat_opts = LLMChatOptions {
@@ -365,7 +372,9 @@ impl OpenMultiAgent {
 
         let synthesis_messages = vec![LLMMessage {
             role: Role::User,
-            content: vec![ContentBlock::Text { text: synthesis_prompt }],
+            content: vec![ContentBlock::Text {
+                text: synthesis_prompt,
+            }],
         }];
 
         let synthesis_response = coordinator_adapter
@@ -508,9 +517,7 @@ impl OpenMultiAgent {
                     .iter()
                     .find(|a| a.name == agent_name)
                     .cloned()
-                    .unwrap_or_else(|| {
-                        team.agents.first().cloned().unwrap_or_default()
-                    });
+                    .unwrap_or_else(|| team.agents.first().cloned().unwrap_or_default());
 
                 let memory_md = shared_memory.to_markdown().await;
                 let task_prompt = format!(
@@ -570,7 +577,8 @@ impl OpenMultiAgent {
                             })
                         },
                         &task_arc,
-                        Some(Arc::new(orchestrator_retry_logger) as Arc<dyn Fn(u32, u32, String, u64) + Send + Sync>),
+                        Some(Arc::new(orchestrator_retry_logger)
+                            as Arc<dyn Fn(u32, u32, String, u64) + Send + Sync>),
                     )
                     .await
                 };
@@ -597,7 +605,12 @@ impl OpenMultiAgent {
                     }),
                 );
 
-                join_handles.push((task_id, task_title, agent_name_owned, Ok::<AgentRunResult, crate::error::AgentError>(result)));
+                join_handles.push((
+                    task_id,
+                    task_title,
+                    agent_name_owned,
+                    Ok::<AgentRunResult, crate::error::AgentError>(result),
+                ));
             }
 
             // Process results.
@@ -607,7 +620,9 @@ impl OpenMultiAgent {
                         *total_usage = total_usage.add(&run_result.token_usage);
                         if run_result.success {
                             self.emit_progress(&format!("Completed task: {}", task_title));
-                            shared_memory.write(&agent_name, &task_id, &run_result.output).await;
+                            shared_memory
+                                .write(&agent_name, &task_id, &run_result.output)
+                                .await;
                             let _ = queue.complete(&task_id, Some(run_result.output.clone()));
                         } else {
                             self.emit_progress(&format!(
@@ -619,10 +634,7 @@ impl OpenMultiAgent {
                         agent_results.insert(task_id.clone(), run_result);
                     }
                     Err(e) => {
-                        self.emit_progress(&format!(
-                            "Failed task: {} — {}",
-                            task_title, e
-                        ));
+                        self.emit_progress(&format!("Failed task: {} — {}", task_title, e));
                         let _ = queue.fail(&task_id, e.to_string());
                     }
                 }
@@ -816,9 +828,9 @@ mod tests {
 
         let result = execute_with_retry(
             move || {
-                Box::pin(async move {
-                    Err(crate::error::AgentError::Other("always fails".to_string()))
-                })
+                Box::pin(
+                    async move { Err(crate::error::AgentError::Other("always fails".to_string())) },
+                )
             },
             &task,
             None::<Arc<dyn Fn(u32, u32, String, u64) + Send + Sync>>,
