@@ -6,7 +6,7 @@ description = "A multi-agent orchestration framework for Rust — streaming LLM 
 license = "Apache-2.0"
 repository = "https://github.com/Supernova1744/open-multi-agent-rs"
 keywords = ["llm", "agent", "ai", "openai", "anthropic"]
-categories = ["asynchronous", "api-bindings", "Artificial intelligence"]
+categories = ["asynchronous", "api-bindings", "artificial-intelligence"]
 
 [[bin]]
 name = "demo"
