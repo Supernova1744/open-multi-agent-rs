@@ -31,3 +31,5 @@ target
 *.swp
 .DS_Store
 Thumbs.db
+
+Cargo.lock
