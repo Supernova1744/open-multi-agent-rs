@@ -65,9 +65,11 @@ impl Scheduler {
 
         let mut result = Vec::new();
         for task in unassigned {
-            let best = agents.iter()
+            let Some(best) = agents.iter()
                 .min_by_key(|a| load.get(&a.name).copied().unwrap_or(0))
-                .unwrap();
+            else {
+                continue; // no agents available — skip this task
+            };
             result.push((task.id.clone(), best.name.clone()));
             *load.entry(best.name.clone()).or_insert(0) += 1;
         }

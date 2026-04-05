@@ -105,7 +105,7 @@ impl MessageBus {
 
     /// Returns messages not yet marked as read by `agent_name`.
     pub fn get_unread(&self, agent_name: &str) -> Vec<Message> {
-        let state = self.state.lock().unwrap();
+        let state = self.state.lock().unwrap_or_else(|e| e.into_inner());
         let read = state.read_state.get(agent_name);
         state
             .messages
@@ -120,7 +120,7 @@ impl MessageBus {
 
     /// Returns every message (read or unread) addressed to `agent_name`.
     pub fn get_all(&self, agent_name: &str) -> Vec<Message> {
-        let state = self.state.lock().unwrap();
+        let state = self.state.lock().unwrap_or_else(|e| e.into_inner());
         state
             .messages
             .iter()
@@ -134,7 +134,7 @@ impl MessageBus {
         if message_ids.is_empty() {
             return;
         }
-        let mut state = self.state.lock().unwrap();
+        let mut state = self.state.lock().unwrap_or_else(|e| e.into_inner());
         let read = state
             .read_state
             .entry(agent_name.to_string())
@@ -146,7 +146,7 @@ impl MessageBus {
 
     /// Returns all messages exchanged between `agent1` and `agent2` in either direction.
     pub fn get_conversation(&self, agent1: &str, agent2: &str) -> Vec<Message> {
-        let state = self.state.lock().unwrap();
+        let state = self.state.lock().unwrap_or_else(|e| e.into_inner());
         state
             .messages
             .iter()
@@ -170,7 +170,7 @@ impl MessageBus {
         agent_name: &str,
         callback: impl Fn(Message) + Send + Sync + 'static,
     ) -> impl FnOnce() {
-        let mut state = self.state.lock().unwrap();
+        let mut state = self.state.lock().unwrap_or_else(|e| e.into_inner());
         let id = state.next_sub_id;
         state.next_sub_id += 1;
         let subs = state
@@ -185,7 +185,7 @@ impl MessageBus {
         let bus_state = Arc::clone(&self.state);
         let agent = agent_name.to_string();
         move || {
-            let mut s = bus_state.lock().unwrap();
+            let mut s = bus_state.lock().unwrap_or_else(|e| e.into_inner());
             if let Some(subs) = s.subscribers.get_mut(&agent) {
                 subs.retain(|sub| sub.id != id);
             }
@@ -197,7 +197,7 @@ impl MessageBus {
     // -----------------------------------------------------------------------
 
     fn persist(&self, message: Message) {
-        let mut state = self.state.lock().unwrap();
+        let mut state = self.state.lock().unwrap_or_else(|e| e.into_inner());
         state.messages.push(message.clone());
         // Notify subscribers while holding the lock (callbacks must not call
         // back into the bus to avoid deadlocks — same rule as TS version).
