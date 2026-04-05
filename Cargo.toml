@@ -1,0 +1,25 @@
+[package]
+name = "open-multi-agent-rs"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "demo"
+path = "src/main.rs"
+
+[lib]
+name = "open_multi_agent"
+path = "src/lib.rs"
+
+[dependencies]
+tokio = { version = "1", features = ["full"] }
+reqwest = { version = "0.12", features = ["json"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+async-trait = "0.1"
+thiserror = "1"
+uuid = { version = "1", features = ["v4"] }
+futures = "0.3"
+anyhow = "1"
+chrono = { version = "0.4", features = ["serde"] }
+async-stream = "0.3"
