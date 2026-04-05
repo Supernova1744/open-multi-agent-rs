@@ -4,9 +4,7 @@
 ///
 /// Run with:
 ///   cargo run --bin demo
-use open_multi_agent::{
-    AgentConfig, OrchestratorConfig, OpenMultiAgent, TeamConfig, create_task,
-};
+use open_multi_agent::{create_task, AgentConfig, OpenMultiAgent, OrchestratorConfig, TeamConfig};
 
 fn load_env() {
     dotenvy::dotenv().ok(); // silently ignore if .env is absent
@@ -66,11 +64,17 @@ async fn test_single_agent() {
 
     println!("Prompt: What is the capital of France? Answer in one word.");
 
-    match orchestrator.run_agent(config, "What is the capital of France? Answer in one word.").await {
+    match orchestrator
+        .run_agent(config, "What is the capital of France? Answer in one word.")
+        .await
+    {
         Ok(result) => {
             println!("Success: {}", result.success);
             println!("Output: {}", result.output);
-            println!("Tokens: input={}, output={}", result.token_usage.input_tokens, result.token_usage.output_tokens);
+            println!(
+                "Tokens: input={}, output={}",
+                result.token_usage.input_tokens, result.token_usage.output_tokens
+            );
         }
         Err(e) => println!("Error: {}", e),
     }
@@ -90,7 +94,9 @@ async fn test_multi_turn() {
 
     let registry = open_multi_agent::ToolRegistry::new();
     let registry = std::sync::Arc::new(tokio::sync::Mutex::new(registry));
-    let executor = std::sync::Arc::new(open_multi_agent::ToolExecutor::new(std::sync::Arc::clone(&registry)));
+    let executor = std::sync::Arc::new(open_multi_agent::ToolExecutor::new(std::sync::Arc::clone(
+        &registry,
+    )));
     let adapter = std::sync::Arc::from(open_multi_agent::create_adapter(
         "openrouter",
         Some(openrouter_api_key()),
@@ -100,13 +106,22 @@ async fn test_multi_turn() {
     let mut agent = open_multi_agent::agent::Agent::new(config, registry, executor);
 
     println!("Turn 1: What is 2 + 2?");
-    match agent.prompt("What is 2 + 2?", std::sync::Arc::clone(&adapter)).await {
+    match agent
+        .prompt("What is 2 + 2?", std::sync::Arc::clone(&adapter))
+        .await
+    {
         Ok(r) => println!("  → {}", r.output),
         Err(e) => println!("  → Error: {}", e),
     }
 
     println!("Turn 2: Multiply that result by 3.");
-    match agent.prompt("Multiply that result by 3.", std::sync::Arc::clone(&adapter)).await {
+    match agent
+        .prompt(
+            "Multiply that result by 3.",
+            std::sync::Arc::clone(&adapter),
+        )
+        .await
+    {
         Ok(r) => println!("  → {}", r.output),
         Err(e) => println!("  → Error: {}", e),
     }
@@ -126,8 +141,14 @@ async fn test_task_pipeline() {
     let team = TeamConfig {
         name: "pipeline-team".to_string(),
         agents: vec![
-            make_agent("researcher", "You research topics and summarize key points concisely."),
-            make_agent("writer", "You write clear, well-structured content based on provided research."),
+            make_agent(
+                "researcher",
+                "You research topics and summarize key points concisely.",
+            ),
+            make_agent(
+                "writer",
+                "You write clear, well-structured content based on provided research.",
+            ),
         ],
         shared_memory: Some(true),
         max_concurrency: Some(2),
@@ -158,9 +179,9 @@ async fn test_task_pipeline() {
     match orchestrator.run_tasks(&team, vec![task1, task2]).await {
         Ok(result) => {
             println!("Pipeline success: {}", result.success);
-            println!("Total tokens: input={}, output={}",
-                result.total_token_usage.input_tokens,
-                result.total_token_usage.output_tokens
+            println!(
+                "Total tokens: input={}, output={}",
+                result.total_token_usage.input_tokens, result.total_token_usage.output_tokens
             );
             for (id, agent_result) in &result.agent_results {
                 println!("\n--- Task {} ---", id);
@@ -204,9 +225,9 @@ async fn test_team_coordinator() {
     match orchestrator.run_team(&team, goal).await {
         Ok(result) => {
             println!("Team run success: {}", result.success);
-            println!("Total tokens: input={}, output={}",
-                result.total_token_usage.input_tokens,
-                result.total_token_usage.output_tokens,
+            println!(
+                "Total tokens: input={}, output={}",
+                result.total_token_usage.input_tokens, result.total_token_usage.output_tokens,
             );
             if let Some(coord) = result.agent_results.get("coordinator") {
                 println!("\n=== FINAL OUTPUT (Coordinator) ===");

@@ -22,12 +22,22 @@ struct ChatRequest {
     messages: Vec<OAIMessage>,
     #[serde(skip_serializing_if = "Option::is_none")]
     stream: Option<bool>,
+    /// Ask the provider to include token-usage stats in the last SSE chunk.
+    /// Required by OpenAI-compatible servers (including OpenRouter) to get
+    /// non-zero token counts when streaming.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    stream_options: Option<StreamOptions>,
     #[serde(skip_serializing_if = "Option::is_none")]
     tools: Option<Vec<OAITool>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     max_tokens: Option<u32>,
     #[serde(skip_serializing_if = "Option::is_none")]
     temperature: Option<f32>,
+}
+
+#[derive(Debug, Serialize)]
+struct StreamOptions {
+    include_usage: bool,
 }
 
 // ---------------------------------------------------------------------------
@@ -186,10 +196,6 @@ fn extract_text_from_message(msg: &OAIMessage) -> String {
     }
 
     String::new()
-}
-
-fn strip_think_tags_owned(text: String) -> String {
-    strip_think_tags(&text)
 }
 
 /// Remove `<think>…</think>` wrapper blocks that reasoning models sometimes
@@ -413,7 +419,8 @@ impl LLMAdapter for OpenRouterAdapter {
         let request = ChatRequest {
             model: options.model.clone(),
             messages: oai_messages,
-            stream: None, // non-streaming path
+            stream: None,
+            stream_options: None, // only set for streaming path
             tools: if oai_tools.as_ref().map(|t| t.is_empty()).unwrap_or(true) {
                 None
             } else {
@@ -486,6 +493,7 @@ impl LLMAdapter for OpenRouterAdapter {
                 model: options.model.clone(),
                 messages: oai_messages,
                 stream: Some(true),
+                stream_options: Some(StreamOptions { include_usage: true }),
                 tools: if oai_tools.as_ref().map(|t| t.is_empty()).unwrap_or(true) { None } else { oai_tools },
                 max_tokens: options.max_tokens,
                 temperature: options.temperature,
@@ -519,8 +527,14 @@ impl LLMAdapter for OpenRouterAdapter {
             let mut resp_id = String::new();
             let mut total_input = 0u64;
             let mut total_output = 0u64;
-            // Collect full text so we can include it in Complete.
+            // Primary text from delta.content (the model's final answer).
             let mut full_text = String::new();
+            // Fallback: reasoning_content is thinking/internal monologue.
+            // Some models (e.g. Qwen3 free on OpenRouter) send the answer
+            // only in reasoning_content with delta.content always null.
+            // We accumulate it silently (no live Text events) and use it
+            // only if full_text remains empty at the end.
+            let mut full_reasoning = String::new();
 
             'sse: while let Some(chunk) = byte_stream.next().await {
                 let chunk = chunk.map_err(|e| AgentError::from(e))?;
@@ -564,16 +578,18 @@ impl LLMAdapter for OpenRouterAdapter {
                                 }
 
                                 // ── Text delta ──────────────────────────────
-                                let text_piece = choice.delta.content
-                                    .filter(|s| !s.is_empty())
-                                    .or_else(|| choice.delta.reasoning_content.filter(|s| !s.is_empty()))
-                                    .map(|s| strip_think_tags_owned(s));
-
-                                if let Some(text) = text_piece {
-                                    if !text.is_empty() {
-                                        full_text.push_str(&text);
-                                        yield LLMStreamDelta::Text(text);
-                                    }
+                                // Stream delta.content as live Text events (the final answer).
+                                // Accumulate delta.reasoning_content silently — it is the
+                                // model's internal thinking and is only used as a fallback
+                                // at Complete time if delta.content never produced any text.
+                                // Strip <think> tags at the end (on full strings) not here,
+                                // so tags that span chunk boundaries are handled correctly.
+                                if let Some(content) = choice.delta.content.filter(|s| !s.is_empty()) {
+                                    full_text.push_str(&content);
+                                    yield LLMStreamDelta::Text(content);
+                                }
+                                if let Some(rc) = choice.delta.reasoning_content.filter(|s| !s.is_empty()) {
+                                    full_reasoning.push_str(&rc);
                                 }
 
                                 // ── Tool call accumulation ──────────────────
@@ -599,9 +615,26 @@ impl LLMAdapter for OpenRouterAdapter {
 
             // ── Build final LLMResponse ─────────────────────────────────────
             let mut content: Vec<ContentBlock> = Vec::new();
-            // Include the full text so callers that only look at Complete still work.
-            if !full_text.is_empty() {
-                content.push(ContentBlock::Text { text: full_text });
+
+            // Determine which text source to use.
+            // 1. Prefer delta.content (the model's stated final answer).
+            // 2. Fall back to reasoning_content when content was always empty
+            //    (observed with Qwen3-free and some other reasoning models on OpenRouter).
+            // Strip <think>…</think> blocks from the complete string — doing it once
+            // here correctly handles tags that span chunk boundaries.
+            let raw = if !full_text.is_empty() { &full_text } else { &full_reasoning };
+            let clean = strip_think_tags(raw);
+            let final_text = if !clean.is_empty() {
+                clean
+            } else if !raw.is_empty() {
+                // Entire text was inside <think> — surface it without tags so
+                // the caller always receives something.
+                raw.trim().to_string()
+            } else {
+                String::new()
+            };
+            if !final_text.is_empty() {
+                content.push(ContentBlock::Text { text: final_text });
             }
             for acc in acc_tools {
                 if acc.name.is_empty() { continue; }

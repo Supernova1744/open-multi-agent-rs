@@ -216,23 +216,19 @@ pub struct BeforeRunHookContext {
 }
 
 /// Sync before-run hook: receives context, may modify prompt.
-pub type BeforeRunHook =
-    Arc<dyn Fn(BeforeRunHookContext) -> BeforeRunHookContext + Send + Sync>;
+pub type BeforeRunHook = Arc<dyn Fn(BeforeRunHookContext) -> BeforeRunHookContext + Send + Sync>;
 
 /// Async before-run hook.
 pub type BeforeRunHookAsync = Arc<
-    dyn Fn(BeforeRunHookContext) -> BoxFuture<'static, Result<BeforeRunHookContext>>
-        + Send
-        + Sync,
+    dyn Fn(BeforeRunHookContext) -> BoxFuture<'static, Result<BeforeRunHookContext>> + Send + Sync,
 >;
 
 /// Sync after-run hook: receives result, may modify it.
 pub type AfterRunHook = Arc<dyn Fn(AgentRunResult) -> AgentRunResult + Send + Sync>;
 
 /// Async after-run hook.
-pub type AfterRunHookAsync = Arc<
-    dyn Fn(AgentRunResult) -> BoxFuture<'static, Result<AgentRunResult>> + Send + Sync,
->;
+pub type AfterRunHookAsync =
+    Arc<dyn Fn(AgentRunResult) -> BoxFuture<'static, Result<AgentRunResult>> + Send + Sync>;
 
 // ---------------------------------------------------------------------------
 // Tool definitions
@@ -390,7 +386,10 @@ pub enum TaskStatus {
 
 impl TaskStatus {
     pub fn is_terminal(&self) -> bool {
-        matches!(self, TaskStatus::Completed | TaskStatus::Failed | TaskStatus::Skipped)
+        matches!(
+            self,
+            TaskStatus::Completed | TaskStatus::Failed | TaskStatus::Skipped
+        )
     }
 }
 
@@ -469,25 +468,36 @@ mod tests {
 
     #[test]
     fn token_usage_add() {
-        let a = TokenUsage { input_tokens: 10, output_tokens: 20 };
-        let b = TokenUsage { input_tokens: 5,  output_tokens: 15 };
+        let a = TokenUsage {
+            input_tokens: 10,
+            output_tokens: 20,
+        };
+        let b = TokenUsage {
+            input_tokens: 5,
+            output_tokens: 15,
+        };
         let c = a.add(&b);
-        assert_eq!(c.input_tokens,  15);
+        assert_eq!(c.input_tokens, 15);
         assert_eq!(c.output_tokens, 35);
     }
 
     #[test]
     fn token_usage_add_zero() {
-        let a = TokenUsage { input_tokens: 100, output_tokens: 200 };
+        let a = TokenUsage {
+            input_tokens: 100,
+            output_tokens: 200,
+        };
         let z = TokenUsage::default();
         let c = a.add(&z);
-        assert_eq!(c.input_tokens,  100);
+        assert_eq!(c.input_tokens, 100);
         assert_eq!(c.output_tokens, 200);
     }
 
     #[test]
     fn content_block_as_text_some() {
-        let b = ContentBlock::Text { text: "hello".to_string() };
+        let b = ContentBlock::Text {
+            text: "hello".to_string(),
+        };
         assert_eq!(b.as_text(), Some("hello"));
     }
 
@@ -503,7 +513,11 @@ mod tests {
 
     #[test]
     fn content_block_as_tool_use_some() {
-        let tu = ToolUseBlock { id: "1".to_string(), name: "bash".to_string(), input: HashMap::new() };
+        let tu = ToolUseBlock {
+            id: "1".to_string(),
+            name: "bash".to_string(),
+            input: HashMap::new(),
+        };
         let b = ContentBlock::ToolUse(tu.clone());
         assert!(b.as_tool_use().is_some());
         assert_eq!(b.as_tool_use().unwrap().name, "bash");
@@ -511,7 +525,9 @@ mod tests {
 
     #[test]
     fn content_block_as_tool_use_none_for_text() {
-        let b = ContentBlock::Text { text: "x".to_string() };
+        let b = ContentBlock::Text {
+            text: "x".to_string(),
+        };
         assert!(b.as_tool_use().is_none());
     }
 
