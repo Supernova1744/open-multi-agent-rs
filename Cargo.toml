@@ -1,6 +1,6 @@
 [package]
 name = "open-multi-agent-rs"
-version = "0.1.1"
+version = "0.1.2"
 edition = "2021"
 description = "A multi-agent orchestration framework for Rust — streaming LLM calls, tool use, task pipelines, retry, and observability."
 license = "Apache-2.0"
