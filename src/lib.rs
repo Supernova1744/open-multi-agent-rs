@@ -36,6 +36,13 @@ pub use messaging::{Message, MessageBus};
 
 // Tool
 pub use tool::{Tool, ToolRegistry, ToolExecutor};
+pub use tool::built_in::{
+    register_built_in_tools,
+    BashTool, FileReadTool, FileWriteTool, FileUpdateTool, FileDeleteTool,
+    FileListTool, FileMoveTool, DirCreateTool, DirDeleteTool, GrepTool,
+    PythonWriteTool, PythonRunTool, PythonTestTool,
+    RepoIngestTool,
+};
 
 // LLM adapters
 pub use llm::{create_adapter, LLMAdapter};

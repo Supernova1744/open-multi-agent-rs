@@ -432,14 +432,37 @@ impl LLMAdapter for OpenRouterAdapter {
 
         let url = format!("{}/chat/completions", self.base_url.trim_end_matches('/'));
 
-        let response = self
-            .client
-            .post(&url)
-            .header("Authorization", format!("Bearer {}", self.api_key))
-            .header("Content-Type", "application/json")
-            .json(&request)
-            .send()
-            .await?;
+        // Retry up to 5 times on HTTP 429 with exponential backoff.
+        let response = {
+            let mut attempts = 0u32;
+            const MAX_RETRIES: u32 = 5;
+            loop {
+                let resp = self
+                    .client
+                    .post(&url)
+                    .header("Authorization", format!("Bearer {}", self.api_key))
+                    .header("Content-Type", "application/json")
+                    .json(&request)
+                    .send()
+                    .await?;
+
+                if resp.status() == reqwest::StatusCode::TOO_MANY_REQUESTS && attempts < MAX_RETRIES {
+                    attempts += 1;
+                    let retry_after_ms = resp.headers()
+                        .get("retry-after")
+                        .and_then(|v| v.to_str().ok())
+                        .and_then(|s| s.parse::<u64>().ok())
+                        .map(|s| s * 1000)
+                        .unwrap_or(0);
+                    let backoff_ms = 5000u64 * (1u64 << (attempts - 1));
+                    let delay_ms = retry_after_ms.max(backoff_ms).min(90_000);
+                    eprintln!("[openrouter] HTTP 429 — retrying in {}ms (attempt {}/{})", delay_ms, attempts, MAX_RETRIES);
+                    tokio::time::sleep(tokio::time::Duration::from_millis(delay_ms)).await;
+                    continue;
+                }
+                break resp;
+            }
+        };
 
         if !response.status().is_success() {
             let status = response.status();
@@ -501,14 +524,45 @@ impl LLMAdapter for OpenRouterAdapter {
 
             let url = format!("{}/chat/completions", base_url.trim_end_matches('/'));
 
-            let http_resp = client
-                .post(&url)
-                .header("Authorization", format!("Bearer {}", api_key))
-                .header("Content-Type", "application/json")
-                .json(&request)
-                .send()
-                .await
-                .map_err(|e| AgentError::from(e))?;
+            // Outer retry loop — retries the entire HTTP+SSE request when:
+            //   (a) HTTP 429 is received (up to 5 times, exponential backoff)
+            //   (b) HTTP 200 but empty SSE body (up to 3 times, linear delay)
+            // Text events are only emitted on a successful non-empty response,
+            // so retrying is always a clean restart from the caller's perspective.
+            let mut http_429_attempts = 0u32;
+            const MAX_429_RETRIES: u32 = 5;
+            let mut empty_retries = 0u32;
+            const MAX_EMPTY_RETRIES: u32 = 3;
+
+            let (final_content, final_resp_id, final_finish_reason, final_total_input, final_total_output) = 'request: loop {
+
+            // ── HTTP request with 429 backoff ─────────────────────────────
+            let http_resp = loop {
+                let resp = client
+                    .post(&url)
+                    .header("Authorization", format!("Bearer {}", api_key))
+                    .header("Content-Type", "application/json")
+                    .json(&request)
+                    .send()
+                    .await
+                    .map_err(|e| AgentError::from(e))?;
+
+                if resp.status() == reqwest::StatusCode::TOO_MANY_REQUESTS && http_429_attempts < MAX_429_RETRIES {
+                    http_429_attempts += 1;
+                    let retry_after_ms = resp.headers()
+                        .get("retry-after")
+                        .and_then(|v| v.to_str().ok())
+                        .and_then(|s| s.parse::<u64>().ok())
+                        .map(|s| s * 1000)
+                        .unwrap_or(0);
+                    let backoff_ms = 5000u64 * (1u64 << (http_429_attempts - 1)); // 5s,10s,20s,40s,80s
+                    let delay_ms = retry_after_ms.max(backoff_ms).min(90_000);
+                    eprintln!("[openrouter] HTTP 429 — retrying in {}ms (attempt {}/{})", delay_ms, http_429_attempts, MAX_429_RETRIES);
+                    tokio::time::sleep(tokio::time::Duration::from_millis(delay_ms)).await;
+                    continue;
+                }
+                break resp;
+            };
 
             if !http_resp.status().is_success() {
                 let status = http_resp.status();
@@ -521,26 +575,20 @@ impl LLMAdapter for OpenRouterAdapter {
             let mut byte_stream = http_resp.bytes_stream();
             let mut buf = String::new();
 
-            // State accumulated across chunks.
+            // State for this attempt (reset on each 'request retry).
             let mut acc_tools: Vec<AccToolCall> = Vec::new();
             let mut finish_reason = String::from("end_turn");
             let mut resp_id = String::new();
             let mut total_input = 0u64;
             let mut total_output = 0u64;
-            // Primary text from delta.content (the model's final answer).
             let mut full_text = String::new();
-            // Fallback: reasoning_content is thinking/internal monologue.
-            // Some models (e.g. Qwen3 free on OpenRouter) send the answer
-            // only in reasoning_content with delta.content always null.
-            // We accumulate it silently (no live Text events) and use it
-            // only if full_text remains empty at the end.
+            // Fallback: reasoning_content (Qwen3, DeepSeek-R1, o1, etc.)
             let mut full_reasoning = String::new();
 
             'sse: while let Some(chunk) = byte_stream.next().await {
                 let chunk = chunk.map_err(|e| AgentError::from(e))?;
                 buf.push_str(&String::from_utf8_lossy(&chunk));
 
-                // Process every complete line in the buffer.
                 loop {
                     match buf.find('\n') {
                         None => break,
@@ -548,24 +596,19 @@ impl LLMAdapter for OpenRouterAdapter {
                             let line = buf[..nl].trim().to_string();
                             buf = buf[nl + 1..].to_string();
 
-                            if !line.starts_with("data:") {
-                                continue;
-                            }
+                            if !line.starts_with("data:") { continue; }
                             let data = line["data:".len()..].trim();
-                            if data == "[DONE]" {
-                                break 'sse;
-                            }
+                            if data == "[DONE]" { break 'sse; }
 
                             let sse: SSEChunk = match serde_json::from_str(data) {
                                 Ok(c) => c,
-                                Err(_) => continue, // skip malformed chunks
+                                Err(_) => continue,
                             };
 
                             if let Some(id) = sse.id { resp_id = id; }
                             if let Some(u) = sse.usage {
                                 total_input = u.prompt_tokens.unwrap_or(total_input);
                                 total_output = u.completion_tokens.unwrap_or(total_output);
-                                // total_tokens fallback
                                 if total_input == 0 && total_output == 0 {
                                     if let Some(t) = u.total_tokens { total_output = t; }
                                 }
@@ -577,22 +620,17 @@ impl LLMAdapter for OpenRouterAdapter {
                                     else if !fr.is_empty() { finish_reason = "end_turn".to_string(); }
                                 }
 
-                                // ── Text delta ──────────────────────────────
-                                // Stream delta.content as live Text events (the final answer).
-                                // Accumulate delta.reasoning_content silently — it is the
-                                // model's internal thinking and is only used as a fallback
-                                // at Complete time if delta.content never produced any text.
-                                // Strip <think> tags at the end (on full strings) not here,
-                                // so tags that span chunk boundaries are handled correctly.
+                                // Text delta: emit as live streaming events.
                                 if let Some(content) = choice.delta.content.filter(|s| !s.is_empty()) {
                                     full_text.push_str(&content);
                                     yield LLMStreamDelta::Text(content);
                                 }
+                                // Reasoning content: accumulate silently as fallback.
                                 if let Some(rc) = choice.delta.reasoning_content.filter(|s| !s.is_empty()) {
                                     full_reasoning.push_str(&rc);
                                 }
 
-                                // ── Tool call accumulation ──────────────────
+                                // Tool call accumulation.
                                 if let Some(tool_calls) = choice.delta.tool_calls {
                                     for tc in tool_calls {
                                         let idx = tc.index;
@@ -613,22 +651,16 @@ impl LLMAdapter for OpenRouterAdapter {
                 }
             }
 
-            // ── Build final LLMResponse ─────────────────────────────────────
+            // ── Build LLMResponse content ──────────────────────────────────
             let mut content: Vec<ContentBlock> = Vec::new();
 
-            // Determine which text source to use.
-            // 1. Prefer delta.content (the model's stated final answer).
-            // 2. Fall back to reasoning_content when content was always empty
-            //    (observed with Qwen3-free and some other reasoning models on OpenRouter).
-            // Strip <think>…</think> blocks from the complete string — doing it once
-            // here correctly handles tags that span chunk boundaries.
+            // Choose text source: delta.content preferred, reasoning_content as fallback.
+            // Strip <think>…</think> on the complete string (handles cross-chunk tags).
             let raw = if !full_text.is_empty() { &full_text } else { &full_reasoning };
             let clean = strip_think_tags(raw);
             let final_text = if !clean.is_empty() {
                 clean
             } else if !raw.is_empty() {
-                // Entire text was inside <think> — surface it without tags so
-                // the caller always receives something.
                 raw.trim().to_string()
             } else {
                 String::new()
@@ -643,12 +675,32 @@ impl LLMAdapter for OpenRouterAdapter {
                 content.push(ContentBlock::ToolUse(ToolUseBlock { id: acc.id, name: acc.name, input }));
             }
 
+            // Guard: empty response (soft rate limit or model glitch).
+            // Retry up to MAX_EMPTY_RETRIES times with a short delay.
+            // Safe to retry because no Text events were emitted for an empty response.
+            if content.is_empty() && total_output == 0 {
+                if empty_retries < MAX_EMPTY_RETRIES {
+                    empty_retries += 1;
+                    let delay_ms = 3000u64 * empty_retries as u64;
+                    eprintln!("[openrouter] Empty response — retrying in {}ms (attempt {}/{})", delay_ms, empty_retries, MAX_EMPTY_RETRIES);
+                    tokio::time::sleep(tokio::time::Duration::from_millis(delay_ms)).await;
+                    continue 'request;
+                }
+                Err(AgentError::LlmError(
+                    "Empty response from model after retries (rate limited or model unavailable)".to_string()
+                ))?;
+                return;
+            }
+
+            break 'request (content, resp_id, finish_reason, total_input, total_output);
+            }; // end 'request loop
+
             yield LLMStreamDelta::Complete(LLMResponse {
-                id: resp_id,
-                content,
+                id: final_resp_id,
+                content: final_content,
                 model: options.model.clone(),
-                stop_reason: finish_reason,
-                usage: TokenUsage { input_tokens: total_input, output_tokens: total_output },
+                stop_reason: final_finish_reason,
+                usage: TokenUsage { input_tokens: final_total_input, output_tokens: final_total_output },
             });
         })
     }

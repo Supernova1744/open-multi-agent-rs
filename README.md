@@ -32,6 +32,12 @@ A Rust port of [open-multi-agent](https://github.com/JackChen-me/open-multi-agen
   - [MessageBus](#messagebus)
   - [Retry and Backoff](#retry-and-backoff)
   - [Approval Gates](#approval-gates)
+- [Built-in Tools](#built-in-tools)
+  - [File Management](#file-management-tools)
+  - [Python Coding](#python-coding-tools)
+  - [Repository Ingestion](#repository-ingestion-tool)
+  - [Shell & Search](#shell--search-tools)
+- [Examples](#examples)
 - [Architecture Overview](#architecture-overview)
 - [Troubleshooting](#troubleshooting)
 
@@ -87,7 +93,21 @@ open-multi-agent-rs/
 │   │   ├── store.rs             # InMemoryStore
 │   │   └── shared.rs           # SharedMemory — namespaced cross-agent memory
 │   └── tool/
-│       └── mod.rs               # ToolRegistry + ToolExecutor
+│       ├── mod.rs               # ToolRegistry + ToolExecutor
+│       └── built_in.rs          # 14 built-in tools (file, python, repo_ingest, bash, grep)
+├── examples/
+│   ├── 01_single_agent.rs       # One-shot agent
+│   ├── 02_multi_turn_chat.rs    # Multi-turn conversation
+│   ├── 03_streaming.rs          # Token-by-token streaming
+│   ├── 04_custom_tool.rs        # Custom Tool implementation
+│   ├── 05_structured_output.rs  # JSON schema output
+│   ├── 06_task_pipeline.rs      # Dependency-aware pipeline
+│   ├── 07_multi_agent_system.rs # Multi-agent team
+│   ├── 08_hooks_and_trace.rs    # Lifecycle hooks + observability
+│   ├── 09_message_bus.rs        # Agent-to-agent messaging
+│   ├── 10_retry_and_approval.rs # Retry backoff + approval gates
+│   ├── 11_python_coding_agent.rs# Python write/run/test workflow
+│   └── 12_repo_mindmap.rs       # Repo ingestion + Mermaid mindmap
 └── tests/
     ├── mock_adapter.rs          # Shared deterministic mock LLM adapter
     ├── integration_tests.rs     # Core integration tests
@@ -465,7 +485,7 @@ while let Some(event) = stream.next().await {
 
 ### Tools
 
-Register tools on the agent's `ToolRegistry`. The agent calls them automatically during its turn loop:
+Register tools on the agent's `ToolRegistry`. The agent calls them automatically during its turn loop. Use `register_built_in_tools` to add all built-in tools at once (see [Built-in Tools](#built-in-tools)):
 
 ```rust
 use open_multi_agent_rs::{Tool, ToolRegistry, types::LLMToolDef};
@@ -650,6 +670,175 @@ let config = OrchestratorConfig {
 
 ---
 
+## Built-in Tools
+
+Register all built-in tools with a single call:
+
+```rust
+use open_multi_agent_rs::tool::{built_in::register_built_in_tools, ToolExecutor, ToolRegistry};
+use std::sync::Arc;
+use tokio::sync::Mutex;
+
+let registry = Arc::new(Mutex::new(ToolRegistry::new()));
+{
+    let mut reg = registry.lock().await;
+    register_built_in_tools(&mut reg).await;
+}
+let executor = Arc::new(ToolExecutor::new(Arc::clone(&registry)));
+```
+
+Give an agent access to a subset of tools via `AgentConfig::tools`:
+
+```rust
+let config = AgentConfig {
+    tools: Some(vec![
+        "file_read".to_string(),
+        "file_write".to_string(),
+        "python_run".to_string(),
+    ]),
+    ..Default::default()
+};
+```
+
+All file and directory tools sandbox their paths to the current working directory. Paths that escape the sandbox are rejected.
+
+---
+
+### File Management Tools
+
+| Tool name | Struct | Description |
+|-----------|--------|-------------|
+| `file_read` | `FileReadTool` | Read a file's contents. Input: `path`. |
+| `file_write` | `FileWriteTool` | Write or overwrite a file. Input: `path`, `content`. |
+| `file_update` | `FileUpdateTool` | Patch a file by literal replacement (`old`→`new`) or line-range replacement (`start_line`/`end_line`). Input: `path`, `old`, `new` OR `path`, `start_line`, `end_line`, `new_content`. |
+| `file_delete` | `FileDeleteTool` | Delete a file. Input: `path`. |
+| `file_list` | `FileListTool` | List directory contents. Input: `path`, optional `recursive` (bool). |
+| `file_move` | `FileMoveTool` | Move or rename a file. Input: `src`, `dst`. |
+| `dir_create` | `DirCreateTool` | Create a directory (including parents). Input: `path`. |
+| `dir_delete` | `DirDeleteTool` | Delete a directory and all contents. Input: `path`. (Rejects root/sandbox root.) |
+
+---
+
+### Python Coding Tools
+
+Requires Python 3 (`python3` or `python`) to be installed and on `PATH`.
+
+| Tool name | Struct | Description |
+|-----------|--------|-------------|
+| `python_write` | `PythonWriteTool` | Write a `.py` file and immediately syntax-check it with `py_compile`. Input: `path`, `code`. |
+| `python_run` | `PythonRunTool` | Execute a Python script or an inline code snippet. Input: `path` (existing file) OR `code` (inline string). |
+| `python_test` | `PythonTestTool` | Run `pytest` on a test file (`--tb=short --no-header`). Input: `path`. |
+
+Example — agent-driven Python coding workflow (see `examples/11_python_coding_agent.rs`):
+
+```rust
+let config = AgentConfig {
+    tools: Some(vec![
+        "python_write".to_string(),
+        "python_run".to_string(),
+        "python_test".to_string(),
+        "file_read".to_string(),
+        "file_update".to_string(),
+    ]),
+    max_turns: Some(12),
+    ..Default::default()
+};
+// Agent can now: write modules, run code, write tests, fix failures, re-run tests.
+```
+
+---
+
+### Repository Ingestion Tool
+
+| Tool name | Struct | Description |
+|-----------|--------|-------------|
+| `repo_ingest` | `RepoIngestTool` | Walk a directory, detect languages, read key files, extract code outlines (functions, structs, classes), and return a rich Markdown analysis report. Input: `path`. |
+
+The report includes:
+- Language breakdown and file tree
+- Priority files read in full (or up to 8 KB)
+- Per-file code outlines: function/struct/class declarations extracted without regex
+- Dependency files (`Cargo.toml`, `package.json`, `requirements.txt`, …)
+- Overall statistics (files, languages, estimated lines)
+
+Use this tool as the first step of a codebase analysis workflow. A downstream agent can then write a Mermaid mindmap, documentation, or architecture diagrams (see `examples/12_repo_mindmap.rs`).
+
+```rust
+// Two-step repo analysis:
+// 1. repo_ingest  → rich Markdown analysis
+// 2. Agent writes a Mermaid mindmap .md using file_write
+let config = AgentConfig {
+    tools: Some(vec![
+        "repo_ingest".to_string(),
+        "file_write".to_string(),
+        "file_read".to_string(),
+    ]),
+    max_turns: Some(6),
+    ..Default::default()
+};
+```
+
+---
+
+### Shell & Search Tools
+
+| Tool name | Struct | Description |
+|-----------|--------|-------------|
+| `bash` | `BashTool` | Run an arbitrary shell command. Input: `command`. |
+| `grep` | `GrepTool` | Search file contents with a pattern. Input: `pattern`, `path`, optional `recursive` (bool). |
+
+---
+
+## Examples
+
+All examples require `OPENROUTER_API_KEY` to be set (add it to a `.env` file or export it).
+
+```bash
+cp .env.example .env   # add your key
+cargo run --example <name>
+```
+
+| # | Name | What it demonstrates |
+|---|------|---------------------|
+| 01 | `01_single_agent` | One-shot agent with `OpenMultiAgent::run_agent` |
+| 02 | `02_multi_turn_chat` | Multi-turn conversation via `agent.prompt()` |
+| 03 | `03_streaming` | Token-by-token streaming with `agent.stream()` |
+| 04 | `04_custom_tool` | Implementing and registering a custom `Tool` |
+| 05 | `05_structured_output` | JSON output with schema validation |
+| 06 | `06_task_pipeline` | Dependency-aware task pipeline |
+| 07 | `07_multi_agent_system` | Multi-agent team with coordinator |
+| 08 | `08_hooks_and_trace` | Lifecycle hooks and trace observability |
+| 09 | `09_message_bus` | Agent-to-agent messaging with `MessageBus` |
+| 10 | `10_retry_and_approval` | Retry backoff and approval gates |
+| 11 | `11_python_coding_agent` | Agent writes, tests, and fixes Python code |
+| 12 | `12_repo_mindmap` | Ingest a repo and generate a Mermaid mindmap |
+
+### Example 11 — Python Coding Agent
+
+```bash
+cargo run --example 11_python_coding_agent
+```
+
+The agent:
+1. Writes `calculator.py` with `add`, `subtract`, `multiply`, `divide` (raises `ValueError` on zero)
+2. Writes `test_calculator.py` with pytest tests for all functions
+3. Runs the tests and fixes any failures
+4. Reports the final pytest output
+
+### Example 12 — Repository Mindmap
+
+```bash
+# Analyse this repo
+cargo run --example 12_repo_mindmap
+
+# Analyse a different directory
+REPO_PATH=/path/to/project OUTPUT_FILE=my_mindmap.md cargo run --example 12_repo_mindmap
+```
+
+The agent calls `repo_ingest` on the target directory then writes a `mindmap`-type Mermaid diagram to the output `.md` file. The file renders in GitHub, VS Code (Mermaid Preview), and Obsidian.
+
+---
+
 ## Architecture Overview
 
 ```
@@ -698,7 +887,7 @@ Your API key is invalid or expired. Make sure `OPENROUTER_API_KEY` is set to a v
 
 **Demo fails with `HTTP 429`**
 
-Rate limit exceeded on the free-tier model. Wait a moment and retry, or switch to a paid model/plan.
+Rate limit exceeded on the free-tier model. The OpenRouter adapter automatically retries up to 5 times with exponential backoff (5 s → 10 s → 20 s → 40 s → 80 s), honouring the `Retry-After` header. If all retries are exhausted, switch to a paid model/plan or wait before retrying.
 
 **Tests hang indefinitely**
 
