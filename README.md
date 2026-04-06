@@ -36,7 +36,21 @@ A Rust port of [open-multi-agent](https://github.com/JackChen-me/open-multi-agen
   - [File Management](#file-management-tools)
   - [Python Coding](#python-coding-tools)
   - [Repository Ingestion](#repository-ingestion-tool)
+  - [HTTP / Networking](#http--networking-tools)
+  - [Data Processing](#data-processing-tools)
+  - [Math & Expressions](#math--expressions-tool)
+  - [Date & Time](#date--time-tool)
+  - [Text Processing](#text-processing-tools)
+  - [Environment & System](#environment--system-tools)
+  - [Cache](#cache-tools)
+  - [Encoding & Hashing](#encoding--hashing-tools)
+  - [Web Researcher](#web-researcher-tool)
+  - [Search Engine](#search-engine-tool)
+  - [Structured Data Parser](#structured-data-parser-tool)
+  - [Knowledge Base (RAG)](#knowledge-base-rag-tools)
+  - [MessageBus Tools](#messagebus-tools)
   - [Shell & Search](#shell--search-tools)
+  - [Utility Tools](#utility-tools)
 - [Examples](#examples)
 - [Architecture Overview](#architecture-overview)
 - [Troubleshooting](#troubleshooting)
@@ -94,7 +108,7 @@ open-multi-agent-rs/
 │   │   └── shared.rs           # SharedMemory — namespaced cross-agent memory
 │   └── tool/
 │       ├── mod.rs               # ToolRegistry + ToolExecutor
-│       └── built_in.rs          # 14 built-in tools (file, python, repo_ingest, bash, grep)
+│       └── built_in.rs          # 45 built-in tools (file, python, HTTP, data, RAG, utility, …)
 ├── examples/
 │   ├── 01_single_agent.rs       # One-shot agent
 │   ├── 02_multi_turn_chat.rs    # Multi-turn conversation
@@ -107,7 +121,15 @@ open-multi-agent-rs/
 │   ├── 09_message_bus.rs        # Agent-to-agent messaging
 │   ├── 10_retry_and_approval.rs # Retry backoff + approval gates
 │   ├── 11_python_coding_agent.rs# Python write/run/test workflow
-│   └── 12_repo_mindmap.rs       # Repo ingestion + Mermaid mindmap
+│   ├── 12_repo_mindmap.rs       # Repo ingestion + Mermaid mindmap
+│   ├── 13_http_tools.rs         # HTTP GET/POST + JSON processing
+│   ├── 14_data_tools.rs         # CSV, math eval, datetime, regex, chunking
+│   ├── 15_system_tools.rs       # System info, env, Base64, hash, cache
+│   ├── 16_web_search.rs         # web_fetch HTML→MD, Tavily search, schema_validate
+│   ├── 17_rag_knowledge_base.rs # In-process RAG (rag_add/search/clear)
+│   ├── 18_bus_agents.rs         # Two agents communicating over MessageBus
+│   ├── 19_knowledge_base_pipeline.rs # Full Karpathy LLM knowledge-base pipeline
+│   └── 20_utility_tools.rs      # sleep, random, template, diff, zip, git, url
 └── tests/
     ├── mock_adapter.rs          # Shared deterministic mock LLM adapter
     ├── integration_tests.rs     # Core integration tests
@@ -780,12 +802,238 @@ let config = AgentConfig {
 
 ---
 
+### HTTP / Networking Tools
+
+| Tool name | Struct | Description |
+|-----------|--------|-------------|
+| `http_get` | `HttpGetTool` | HTTP GET request. Input: `url`, optional `headers`, `timeout_ms`. Response body capped at 4 MB. Follows up to 10 redirects. |
+| `http_post` | `HttpPostTool` | HTTP POST request. Input: `url`, `body`, optional `content_type` (default: `application/json`), `headers`, `timeout_ms`. |
+
+Both tools return `HTTP <status> <reason>\n\n<body>` and set `is_error` for non-2xx responses.
+
+---
+
+### Data Processing Tools
+
+| Tool name | Struct | Description |
+|-----------|--------|-------------|
+| `json_parse` | `JsonParseTool` | Parse a JSON string and optionally extract a sub-value via JSON Pointer (e.g. `/users/0/name`) or pretty-print the whole document. Input: `input`, optional `pointer`, `pretty`. |
+| `json_transform` | `JsonTransformTool` | Transform JSON with a simple operation: `keys`, `values`, `length`, `[/field]` (map array → extract field), or `/pointer` (extract sub-value). Input: `input`, `operation`. |
+| `csv_read` | `CsvReadTool` | Read a CSV file and return rows as a JSON array of objects or a Markdown table. Input: `path`, optional `delimiter`, `has_headers`, `limit`, `format` (`json`\|`markdown`). |
+| `csv_write` | `CsvWriteTool` | Write a JSON array of objects or arrays to a CSV file (headers inferred from first object's keys). Input: `path`, `data` (JSON array string), optional `delimiter`. |
+
+---
+
+### Math & Expressions Tool
+
+| Tool name | Struct | Description |
+|-----------|--------|-------------|
+| `math_eval` | `MathEvalTool` | Safely evaluate a mathematical expression. Supports arithmetic, `sqrt`, `abs`, `min`, `max`, `floor`, `ceil`, `round`, trig functions, comparisons, and optional variable bindings. No code execution. Input: `expression`, optional `variables` (JSON object of `name → number`). |
+
+```rust
+// Example: 3x² + y where x=4, y=7
+// expression: "3 * x^2 + y", variables: {"x": 4.0, "y": 7.0} → 55
+```
+
+---
+
+### Date & Time Tool
+
+| Tool name | Struct | Description |
+|-----------|--------|-------------|
+| `datetime` | `DatetimeTool` | Date/time operations. `operation` selects the mode: `now` (current UTC), `format` (Unix timestamp → string), `parse` (string → Unix timestamp), `diff` (seconds between two timestamps). |
+
+```rust
+// "now"    → "2024-01-15 10:30:00 UTC\ntimestamp: 1705313400"
+// "format" → requires timestamp + format (strftime)
+// "parse"  → requires input string; supports ISO 8601, RFC 3339, and common date formats
+// "diff"   → requires timestamp + timestamp2; returns diff_seconds and human-readable breakdown
+```
+
+---
+
+### Text Processing Tools
+
+| Tool name | Struct | Description |
+|-----------|--------|-------------|
+| `text_regex` | `TextRegexTool` | Apply a regex pattern to text. Modes: `find_all` (returns JSON array of `{match, start, end}`), `replace` (replace all matches; supports `$1` capture groups), `split`. Input: `input`, `pattern`, optional `mode`, `replacement`. |
+| `text_chunk` | `TextChunkTool` | Split large text into chunks for LLM context management. Split by `chars`, `words`, or `lines`, with configurable `chunk_size` and `overlap`. Returns a JSON array of strings. Input: `text`, optional `chunk_size`, `overlap`, `split_by`. |
+
+---
+
+### Environment & System Tools
+
+| Tool name | Struct | Description |
+|-----------|--------|-------------|
+| `env_get` | `EnvGetTool` | Read an environment variable from a safe allowlist (`HOME`, `PATH`, `PORT`, `APP_ENV`, API keys, `REPO_PATH`, etc.). Returns the value or a configurable default. Input: `name`, optional `default`. |
+| `system_info` | `SystemInfoTool` | Return OS family, OS name, architecture, CPU count, and current working directory as a JSON object. No inputs. |
+
+The `env_get` allowlist prevents agents from reading arbitrary sensitive environment variables. To expand it, edit `ENV_ALLOWLIST` in `src/tool/built_in.rs`.
+
+---
+
+### Cache Tools
+
+| Tool name | Struct | Description |
+|-----------|--------|-------------|
+| `cache_set` | `CacheSetTool` | Store a string value in an in-process key-value cache with optional TTL (seconds). The cache persists for the lifetime of the process and is shared across all agents. Input: `key`, `value`, optional `ttl_seconds`. |
+| `cache_get` | `CacheGetTool` | Retrieve a cached value by key. Returns the default (or empty string) if the key is missing or expired. Input: `key`, optional `default`. |
+
+---
+
+### Encoding & Hashing Tools
+
+| Tool name | Struct | Description |
+|-----------|--------|-------------|
+| `base64` | `Base64Tool` | Encode a string to Base64 or decode a Base64 string. Input: `input`, optional `mode` (`encode`\|`decode`, default: `encode`). |
+| `hash_file` | `HashFileTool` | Compute the FNV-1a 64-bit hash of a file within the sandbox. Useful for detecting file changes or verifying integrity. Input: `path`. |
+
+---
+
+### Web Researcher Tool
+
+| Tool name | Struct | Description |
+|-----------|--------|-------------|
+| `web_fetch` | `WebFetchTool` | Fetch a URL and return clean Markdown. Scripts, nav, ads, and noise are stripped. Headings, links, lists, and code blocks are converted to Markdown. Input: `url`, optional `timeout_ms`, `max_length`. |
+
+```rust
+// web_fetch returns far fewer tokens than raw HTML.
+// Example output for a documentation page:
+// "URL: https://example.com\nStatus: 200\n\n# Page Title\n\nContent as Markdown..."
+```
+
+---
+
+### Search Engine Tool
+
+| Tool name | Struct | Description |
+|-----------|--------|-------------|
+| `tavily_search` | `TavilySearchTool` | Real-time web search via the Tavily API. Returns ranked results with titles, URLs, content snippets, and an AI-generated answer. Requires `TAVILY_API_KEY`. Input: `query`, optional `max_results`, `search_depth` (`basic`\|`advanced`), `include_answer`. |
+
+Get a free Tavily API key at <https://tavily.com>.
+
+---
+
+### Structured Data Parser Tool
+
+| Tool name | Struct | Description |
+|-----------|--------|-------------|
+| `schema_validate` | `SchemaValidateTool` | Parse a string (or messy text with embedded JSON) and validate it against a JSON Schema. Supports `required`, property `type` checks, and `enum` constraints. Returns pretty-printed JSON on success, or a detailed error report listing every violation. Input: `input`, `schema`, optional `extract_json`. |
+
+---
+
+### Knowledge Base (RAG) Tools
+
+An in-process knowledge base for Retrieval-Augmented Generation (RAG). Documents are indexed with a lightweight TF-based keyword scorer. No external vector database required.
+
+| Tool name | Struct | Description |
+|-----------|--------|-------------|
+| `rag_add` | `RagAddTool` | Add or update a document in the knowledge base. Input: `id`, `content`, optional `metadata` (JSON). |
+| `rag_search` | `RagSearchTool` | Search by keyword query; returns top-k matching documents with scores and metadata. Input: `query`, optional `top_k`, `min_score`. |
+| `rag_clear` | `RagClearTool` | Remove a specific document by `id`, or omit `id` to clear the entire store. |
+
+```rust
+// Typical RAG workflow:
+// 1. Agent calls rag_add for each document to index
+// 2. For each user question, agent calls rag_search to find relevant docs
+// 3. Agent uses retrieved docs as context to generate an accurate answer
+```
+
+---
+
+### MessageBus Tools
+
+Allow agents to communicate with each other during a tool call. Requires injecting a shared `MessageBus` instance at registration time:
+
+```rust
+use open_multi_agent_rs::{messaging::MessageBus, tool::built_in::register_bus_tools};
+
+let bus = Arc::new(MessageBus::new());
+register_bus_tools(&mut registry, Arc::clone(&bus)).await;
+```
+
+| Tool name | Struct | Description |
+|-----------|--------|-------------|
+| `bus_publish` | `BusPublishTool` | Publish a message to a specific agent (`to: "agent-name"`) or broadcast (`to: "*"`). Input: `to`, `content`, optional `from`. |
+| `bus_read` | `BusReadTool` | Read messages addressed to the current agent. Input: optional `agent`, `unread_only` (default: true), `mark_read` (default: true). |
+
+---
+
 ### Shell & Search Tools
 
 | Tool name | Struct | Description |
 |-----------|--------|-------------|
-| `bash` | `BashTool` | Run an arbitrary shell command. Input: `command`. |
+| `bash` | `BashTool` | Run an arbitrary shell command with configurable timeout. Input: `command`, optional `timeout_ms`. |
 | `grep` | `GrepTool` | Search file contents with a pattern. Input: `pattern`, `path`, optional `recursive` (bool). |
+
+### Utility Tools
+
+General-purpose helpers that cover gaps across nearly every agent workflow.
+
+| Tool name  | Struct        | Description |
+|------------|---------------|-------------|
+| `sleep`    | `SleepTool`   | Pause execution for `ms` milliseconds (max 300 000). Essential for rate-limiting and polling loops. |
+| `random`   | `RandomTool`  | Generate random values: `uuid` (v4), `int` (range), `float` [0,1), `choice` from a list, or `string` (alphanumeric). |
+| `template` | `TemplateTool`| Render `{{variable}}` placeholders in a template string using a provided vars object. Supports `strict` mode. |
+| `diff`     | `DiffTool`    | Compute a unified diff between two strings or two files (`mode="files"`). Output mirrors `diff -u`. |
+| `zip`      | `ZipTool`     | Create, extract, or list ZIP archives within the sandbox. Operations: `create`, `extract`, `list`. |
+| `git`      | `GitTool`     | Run read-heavy + staging Git operations. Allowed: `status`, `log`, `diff`, `show`, `branch`, `tag`, `remote`, `stash`, `ls-files`, `shortlog`, `describe`, `rev-parse`, `cat-file`, `add`, `commit`, `init`. Force flags are blocked. |
+| `url`      | `UrlTool`     | Parse, build, percent-encode, percent-decode, or resolve (join) URLs. No external URL crate required. |
+
+#### Usage snapshot
+
+```rust
+// Pause for 500ms
+sleep ms=500
+
+// Generate a UUID
+random kind="uuid"
+
+// Roll a dice
+random kind="int" min=1 max=6
+
+// Pick randomly from a list
+random kind="choice" items=["red","green","blue"]
+
+// Render a template
+template template="Hello, {{name}}! Order #{{id}} shipped."
+         vars={"name":"Alice","id":"9821"}
+
+// Diff two strings
+diff a="old line\nsecond" b="new line\nsecond"
+
+// Diff two files
+diff a="before.txt" b="after.txt" mode="files"
+
+// Create a zip archive
+zip operation="create" archive="bundle.zip" files=["a.txt","b.txt"]
+
+// List archive contents
+zip operation="list" archive="bundle.zip"
+
+// Extract to a directory
+zip operation="extract" archive="bundle.zip" dest="output/"
+
+// Parse a URL
+url operation="parse" url="https://example.com/api?q=rust#docs"
+
+// Build a URL with query parameters
+url operation="build" scheme="https" host="api.example.com" path="/search"
+    query={"q":"hello world"}
+
+// Percent-encode a string
+url operation="encode" url="hello world & foo=bar"
+
+// Resolve a relative URL
+url operation="join" base="https://docs.rs/tokio/latest/tokio/index.html"
+                     url="../time/index.html"
+
+// Git status
+git args="status"
+
+// Git log (last 5 commits, one line each)
+git args="log --oneline -5"
+```
 
 ---
 
@@ -812,6 +1060,14 @@ cargo run --example <name>
 | 10 | `10_retry_and_approval` | Retry backoff and approval gates |
 | 11 | `11_python_coding_agent` | Agent writes, tests, and fixes Python code |
 | 12 | `12_repo_mindmap` | Ingest a repo and generate a Mermaid mindmap |
+| 13 | `13_http_tools` | HTTP GET/POST + JSON parse/transform |
+| 14 | `14_data_tools` | CSV, math eval, datetime, regex, text chunking |
+| 15 | `15_system_tools` | System info, env vars, Base64, file hashing, cache |
+| 16 | `16_web_search` | `web_fetch` (HTML→Markdown) + `tavily_search` + `schema_validate` |
+| 17 | `17_rag_knowledge_base` | In-process RAG with `rag_add` / `rag_search` / `rag_clear` |
+| 18 | `18_bus_agents` | Two agents communicating via `bus_publish` / `bus_read` |
+| 19 | `19_knowledge_base_pipeline` | Full Karpathy LLM knowledge-base pipeline (ingest → compile → RAG → health-check) |
+| 20 | `20_utility_tools` | `sleep`, `random`, `template`, `diff`, `zip`, `git`, `url` in a single agent demo |
 
 ### Example 11 — Python Coding Agent
 
@@ -824,6 +1080,90 @@ The agent:
 2. Writes `test_calculator.py` with pytest tests for all functions
 3. Runs the tests and fixes any failures
 4. Reports the final pytest output
+
+### Example 16 — Web Research & Search
+
+```bash
+cargo run --example 16_web_search
+
+# With Tavily real-time search:
+TAVILY_API_KEY=tvly-... cargo run --example 16_web_search
+```
+
+The agent uses `web_fetch` to retrieve a page as clean Markdown, or `tavily_search` for real-time results if `TAVILY_API_KEY` is set. Then uses `schema_validate` to force structured JSON output.
+
+### Example 17 — RAG Knowledge Base
+
+```bash
+cargo run --example 17_rag_knowledge_base
+```
+
+The agent adds 4 programming-topic documents with `rag_add`, searches them by keyword with `rag_search`, updates a document, removes one with `rag_clear`, and confirms the removal.
+
+### Example 18 — MessageBus Multi-Agent Communication
+
+```bash
+cargo run --example 18_bus_agents
+```
+
+Two agents share a `MessageBus`. The researcher agent computes facts and publishes findings with `bus_publish`. The writer agent reads them with `bus_read` and writes a report, then broadcasts completion. Demonstrates inter-agent coordination during a single run.
+
+### Example 13 — HTTP Tools
+
+```bash
+cargo run --example 13_http_tools
+```
+
+The agent fetches `https://httpbin.org/json`, extracts a field with `json_parse`, lists top-level keys with `json_transform`, and POSTs a JSON payload to `https://httpbin.org/post`.
+
+### Example 14 — Data Processing Tools
+
+```bash
+cargo run --example 14_data_tools
+```
+
+The agent: creates a CSV sales file with `csv_write`, reads it back with `csv_read`, extracts columns with `json_transform`, computes revenue figures with `math_eval`, inspects timestamps with `datetime`, and extracts dates from text with `text_regex`.
+
+### Example 15 — System & Utility Tools
+
+```bash
+cargo run --example 15_system_tools
+```
+
+The agent: inspects the runtime environment with `system_info`, reads an env var with `env_get`, encodes and decodes a message with `base64`, hashes a file with `hash_file`, and stores/retrieves a value with `cache_set`/`cache_get`.
+
+### Example 19 — Karpathy LLM Knowledge-Base Pipeline
+
+```bash
+cargo run --example 19_knowledge_base_pipeline
+
+# With live Tavily web search:
+TAVILY_API_KEY=tvly-... cargo run --example 19_knowledge_base_pipeline
+```
+
+Implements the four-stage knowledge-base pipeline described by Andrej Karpathy:
+
+| Stage | Tools | What happens |
+|-------|-------|-------------|
+| 1 — Ingest | `article_fetch`, `file_list` | Clip Rust docs pages into `raw/` as Markdown |
+| 2 — Compile | `file_read`, `file_write`, `frontmatter` | LLM writes wiki pages with `[[WikiLinks]]` and YAML metadata |
+| 3 — Index & Q&A | `rag_index_dir`, `wikilink_index`, `rag_search` | Bulk-index wiki, build link graph, answer a question |
+| 4 — Health Check | `wikilink_index`, `grep`, `frontmatter`, `datetime` | Find orphans, check metadata, stamp `last_checked` |
+
+### Example 20 — Utility Tools
+
+```bash
+cargo run --example 20_utility_tools
+```
+
+A single agent that exercises all seven utility tools:
+- `sleep` — 200ms pause
+- `random` — UUID, dice roll, choice, alphanumeric string
+- `template` — order confirmation email render
+- `diff` — unified diff between two multi-line strings
+- `zip` — create, list, and extract an archive
+- `git` — `git status` in the sandbox
+- `url` — parse, build, encode, and resolve URLs
 
 ### Example 12 — Repository Mindmap
 
