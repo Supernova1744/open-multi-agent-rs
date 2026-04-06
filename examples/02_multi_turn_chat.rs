@@ -6,7 +6,7 @@
 ///
 /// Run:
 ///   cargo run --example 02_multi_turn_chat
-use open_multi_agent::{agent::Agent, create_adapter, AgentConfig, ToolExecutor, ToolRegistry};
+use open_multi_agent_rs::{agent::Agent, create_adapter, AgentConfig, ToolExecutor, ToolRegistry};
 use std::sync::Arc;
 use tokio::sync::Mutex;
 

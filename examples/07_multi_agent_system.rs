@@ -20,7 +20,7 @@
 /// Run:
 ///   cargo run --example 07_multi_agent_system
 use futures::future::BoxFuture;
-use open_multi_agent::{
+use open_multi_agent_rs::{
     create_task,
     messaging::MessageBus,
     types::{AgentConfig, Task, TraceEvent},

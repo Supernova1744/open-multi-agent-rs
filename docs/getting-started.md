@@ -71,7 +71,7 @@ See [examples.md](examples.md) for a full annotated walkthrough.
 ## Quick Example
 
 ```rust
-use open_multi_agent::{OrchestratorConfig, OpenMultiAgent, AgentConfig};
+use open_multi_agent_rs::{OrchestratorConfig, OpenMultiAgent, AgentConfig};
 
 #[tokio::main]
 async fn main() {

@@ -8,7 +8,7 @@ agents can build on earlier work.
 ## Creating tasks
 
 ```rust
-use open_multi_agent::create_task;
+use open_multi_agent_rs::create_task;
 
 let research = create_task(
     "Research",
@@ -37,7 +37,7 @@ let report = create_task(
 ## Running the pipeline
 
 ```rust
-use open_multi_agent::{OrchestratorConfig, OpenMultiAgent, TeamConfig, AgentConfig};
+use open_multi_agent_rs::{OrchestratorConfig, OpenMultiAgent, TeamConfig, AgentConfig};
 
 let orchestrator = OpenMultiAgent::new(OrchestratorConfig {
     default_provider: "openrouter".to_string(),
@@ -77,7 +77,7 @@ You can also use `SharedMemory` directly:
 
 ```rust
 use std::sync::Arc;
-use open_multi_agent::memory::{InMemoryStore, SharedMemory};
+use open_multi_agent_rs::memory::{InMemoryStore, SharedMemory};
 
 let store = Arc::new(InMemoryStore::new());
 let memory = SharedMemory::new(Arc::clone(&store) as Arc<_>);
@@ -99,7 +99,7 @@ let context = memory.to_markdown().await;
 `topological_sort` validates and orders the graph:
 
 ```rust
-use open_multi_agent::topological_sort;
+use open_multi_agent_rs::topological_sort;
 
 let ordered = topological_sort(&tasks)?;
 // ordered is a Vec<Task> in safe execution order

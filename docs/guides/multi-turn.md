@@ -16,7 +16,7 @@ The next call sees the entire history.
 ```rust
 use std::sync::Arc;
 use tokio::sync::Mutex;
-use open_multi_agent::{
+use open_multi_agent_rs::{
     agent::Agent,
     llm::create_adapter,
     tool::{ToolRegistry, ToolExecutor},

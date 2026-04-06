@@ -7,7 +7,7 @@ workflows, broadcasting status updates, or implementing human-in-the-loop patter
 ## Creating a bus
 
 ```rust
-use open_multi_agent::messaging::MessageBus;
+use open_multi_agent_rs::messaging::MessageBus;
 
 let bus = MessageBus::new();
 ```
@@ -76,7 +76,7 @@ It runs on the thread/task that called `bus.send` or `bus.broadcast`.
 
 ```rust
 use std::sync::Arc;
-use open_multi_agent::messaging::MessageBus;
+use open_multi_agent_rs::messaging::MessageBus;
 
 let bus = MessageBus::new();
 let bus_worker = bus.clone();

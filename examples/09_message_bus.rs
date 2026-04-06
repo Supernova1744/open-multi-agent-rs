@@ -8,7 +8,7 @@
 ///
 /// Run:
 ///   cargo run --example 09_message_bus
-use open_multi_agent::messaging::MessageBus;
+use open_multi_agent_rs::messaging::MessageBus;
 use std::sync::{Arc, Mutex};
 
 #[tokio::main]

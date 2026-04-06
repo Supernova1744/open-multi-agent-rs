@@ -8,7 +8,7 @@ exponential backoff to space out attempts.
 Set these fields on a `Task` before adding it to a pipeline:
 
 ```rust
-use open_multi_agent::create_task;
+use open_multi_agent_rs::create_task;
 
 let mut task = create_task(
     "Flaky API Call",
@@ -36,7 +36,7 @@ Formula: `delay = base_delay_ms * backoff^(attempt - 1)`, capped at **30 000 ms*
 Use `compute_retry_delay` to preview the schedule:
 
 ```rust
-use open_multi_agent::compute_retry_delay;
+use open_multi_agent_rs::compute_retry_delay;
 
 for attempt in 1..=5u32 {
     let delay = compute_retry_delay(500, 2.0, attempt);
@@ -67,8 +67,8 @@ For custom retry logic outside of a full pipeline:
 ```rust
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
-use open_multi_agent::{execute_with_retry, create_task};
-use open_multi_agent::types::{AgentRunResult, TokenUsage};
+use open_multi_agent_rs::{execute_with_retry, create_task};
+use open_multi_agent_rs::types::{AgentRunResult, TokenUsage};
 
 let call_count = Arc::new(AtomicUsize::new(0));
 let cc = Arc::clone(&call_count);

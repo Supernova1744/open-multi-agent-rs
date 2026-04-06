@@ -3,11 +3,11 @@
 /// Responses are fed from a pre-defined queue, making tests deterministic
 /// without any real network calls.
 use async_trait::async_trait;
-use open_multi_agent::llm::LLMAdapter;
-use open_multi_agent::types::{
+use open_multi_agent_rs::error::Result;
+use open_multi_agent_rs::llm::LLMAdapter;
+use open_multi_agent_rs::types::{
     ContentBlock, LLMChatOptions, LLMMessage, LLMResponse, TokenUsage, ToolUseBlock,
 };
-use open_multi_agent::error::Result;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
@@ -126,11 +126,7 @@ impl LLMAdapter for MockAdapter {
         "mock"
     }
 
-    async fn chat(
-        &self,
-        messages: &[LLMMessage],
-        options: &LLMChatOptions,
-    ) -> Result<LLMResponse> {
+    async fn chat(&self, messages: &[LLMMessage], options: &LLMChatOptions) -> Result<LLMResponse> {
         // Record the call.
         {
             let mut count = self.call_count.lock().unwrap();
@@ -161,16 +157,26 @@ impl LLMAdapter for MockAdapter {
                 content: vec![ContentBlock::Text { text: t }],
                 model: options.model.clone(),
                 stop_reason: "end_turn".to_string(),
-                usage: TokenUsage { input_tokens: 10, output_tokens: 20 },
+                usage: TokenUsage {
+                    input_tokens: 10,
+                    output_tokens: 20,
+                },
             }),
             MockResponse::TextWithUsage(t, input, output) => Ok(LLMResponse {
                 id: "mock-id".to_string(),
                 content: vec![ContentBlock::Text { text: t }],
                 model: options.model.clone(),
                 stop_reason: "end_turn".to_string(),
-                usage: TokenUsage { input_tokens: input, output_tokens: output },
+                usage: TokenUsage {
+                    input_tokens: input,
+                    output_tokens: output,
+                },
             }),
-            MockResponse::ToolCall { tool_name, tool_input, tool_id } => Ok(LLMResponse {
+            MockResponse::ToolCall {
+                tool_name,
+                tool_input,
+                tool_id,
+            } => Ok(LLMResponse {
                 id: "mock-id".to_string(),
                 content: vec![ContentBlock::ToolUse(ToolUseBlock {
                     id: tool_id,
@@ -179,7 +185,10 @@ impl LLMAdapter for MockAdapter {
                 })],
                 model: options.model.clone(),
                 stop_reason: "tool_use".to_string(),
-                usage: TokenUsage { input_tokens: 10, output_tokens: 20 },
+                usage: TokenUsage {
+                    input_tokens: 10,
+                    output_tokens: 20,
+                },
             }),
             MockResponse::MultiToolCall(calls) => {
                 let content = calls
@@ -193,7 +202,10 @@ impl LLMAdapter for MockAdapter {
                     content,
                     model: options.model.clone(),
                     stop_reason: "tool_use".to_string(),
-                    usage: TokenUsage { input_tokens: 10, output_tokens: 20 },
+                    usage: TokenUsage {
+                        input_tokens: 10,
+                        output_tokens: 20,
+                    },
                 })
             }
             MockResponse::TextAndTools { text, tools } => {
@@ -206,10 +218,13 @@ impl LLMAdapter for MockAdapter {
                     content,
                     model: options.model.clone(),
                     stop_reason: "tool_use".to_string(),
-                    usage: TokenUsage { input_tokens: 10, output_tokens: 20 },
+                    usage: TokenUsage {
+                        input_tokens: 10,
+                        output_tokens: 20,
+                    },
                 })
             }
-            MockResponse::Error(msg) => Err(open_multi_agent::error::AgentError::LlmError(msg)),
+            MockResponse::Error(msg) => Err(open_multi_agent_rs::error::AgentError::LlmError(msg)),
         }
     }
 }

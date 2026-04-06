@@ -9,7 +9,7 @@
 /// Run:
 ///   cargo run --example 04_custom_tool
 use async_trait::async_trait;
-use open_multi_agent::{
+use open_multi_agent_rs::{
     agent::Agent,
     create_adapter,
     error::Result,

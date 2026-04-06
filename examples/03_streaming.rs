@@ -7,7 +7,7 @@
 /// Run:
 ///   cargo run --example 03_streaming
 use futures::StreamExt;
-use open_multi_agent::{
+use open_multi_agent_rs::{
     agent::Agent, create_adapter, types::StreamEvent, AgentConfig, ToolExecutor, ToolRegistry,
 };
 use std::sync::Arc;

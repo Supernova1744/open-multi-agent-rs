@@ -11,7 +11,7 @@
 /// Run:
 ///   cargo run --example 10_retry_and_approval
 use futures::future::BoxFuture;
-use open_multi_agent::{
+use open_multi_agent_rs::{
     compute_retry_delay, create_task,
     types::{AgentRunResult, Task, TokenUsage},
     AgentConfig, OpenMultiAgent, OrchestratorConfig, TeamConfig,
@@ -61,7 +61,7 @@ async fn main() {
     task.retry_delay_ms = Some(50); // short for demo
     task.retry_backoff = Some(2.0);
 
-    let result = open_multi_agent::execute_with_retry(
+    let result = open_multi_agent_rs::execute_with_retry(
         move || {
             let cc = Arc::clone(&cc);
             Box::pin(async move {

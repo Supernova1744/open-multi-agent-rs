@@ -6,7 +6,7 @@ handles adapter construction, retries on transient errors, and lifecycle hooks f
 ## Minimal example
 
 ```rust
-use open_multi_agent::{OrchestratorConfig, OpenMultiAgent, AgentConfig};
+use open_multi_agent_rs::{OrchestratorConfig, OpenMultiAgent, AgentConfig};
 
 #[tokio::main]
 async fn main() {
@@ -64,7 +64,7 @@ construct `Agent` directly and build your own adapter:
 ```rust
 use std::sync::Arc;
 use tokio::sync::Mutex;
-use open_multi_agent::{
+use open_multi_agent_rs::{
     agent::Agent,
     llm::create_adapter,
     tool::{ToolRegistry, ToolExecutor},

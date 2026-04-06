@@ -159,7 +159,7 @@ Three providers are supported out of the box:
 Create an adapter programmatically:
 
 ```rust
-use open_multi_agent::create_adapter;
+use open_multi_agent_rs::create_adapter;
 
 let adapter = create_adapter(
     "openrouter",
@@ -325,7 +325,7 @@ tokio = { version = "1", features = ["full"] }
 ### Single Agent
 
 ```rust
-use open_multi_agent::{AgentConfig, OrchestratorConfig, OpenMultiAgent};
+use open_multi_agent_rs::{AgentConfig, OrchestratorConfig, OpenMultiAgent};
 
 #[tokio::main]
 async fn main() {
@@ -361,7 +361,7 @@ async fn main() {
 `agent.prompt()` preserves conversation history across calls:
 
 ```rust
-use open_multi_agent::{agent::Agent, AgentConfig, create_adapter, ToolRegistry, ToolExecutor};
+use open_multi_agent_rs::{agent::Agent, AgentConfig, create_adapter, ToolRegistry, ToolExecutor};
 use std::sync::Arc;
 use tokio::sync::Mutex;
 
@@ -389,7 +389,7 @@ println!("{}", r2.output); // "8" — agent remembers previous context
 Define tasks with explicit dependencies. The orchestrator resolves them in topological order:
 
 ```rust
-use open_multi_agent::{create_task, TeamConfig, OpenMultiAgent, OrchestratorConfig};
+use open_multi_agent_rs::{create_task, TeamConfig, OpenMultiAgent, OrchestratorConfig};
 
 let orchestrator = OpenMultiAgent::new(OrchestratorConfig { /* ... */ });
 
@@ -440,7 +440,7 @@ if let Some(final_output) = result.agent_results.get("coordinator") {
 
 ```rust
 use futures::StreamExt;
-use open_multi_agent::{agent::Agent, types::StreamEvent, create_adapter};
+use open_multi_agent_rs::{agent::Agent, types::StreamEvent, create_adapter};
 
 let adapter = Arc::from(create_adapter("anthropic", Some(api_key), None));
 let stream = agent.stream("Tell me a short story.", adapter);
@@ -468,7 +468,7 @@ while let Some(event) = stream.next().await {
 Register tools on the agent's `ToolRegistry`. The agent calls them automatically during its turn loop:
 
 ```rust
-use open_multi_agent::{Tool, ToolRegistry, types::LLMToolDef};
+use open_multi_agent_rs::{Tool, ToolRegistry, types::LLMToolDef};
 use std::sync::Arc;
 
 let tool = Arc::new(MyTool); // implements the Tool trait
@@ -484,7 +484,7 @@ registry.lock().await.register(tool)?;
 Set `output_schema` on `AgentConfig` to instruct the agent to respond in JSON matching a schema. If the response doesn't match, the framework retries once with error feedback:
 
 ```rust
-use open_multi_agent::AgentConfig;
+use open_multi_agent_rs::AgentConfig;
 
 let config = AgentConfig {
     name: "extractor".to_string(),
@@ -512,7 +512,7 @@ if let Some(structured) = result.structured {
 `before_run` fires before each agent call (can modify the prompt or abort). `after_run` fires after (can modify the output or abort):
 
 ```rust
-use open_multi_agent::types::{AgentConfig, BeforeRunHookContext, AgentRunResult};
+use open_multi_agent_rs::types::{AgentConfig, BeforeRunHookContext, AgentRunResult};
 use futures::future::BoxFuture;
 use std::sync::Arc;
 
@@ -541,7 +541,7 @@ To abort from a hook, return `Err(reason)` — the agent immediately returns a f
 Attach an `on_trace` callback to `OrchestratorConfig` to receive structured spans for every LLM call, tool call, and agent run:
 
 ```rust
-use open_multi_agent::{OrchestratorConfig, types::TraceEvent, OnTraceFn};
+use open_multi_agent_rs::{OrchestratorConfig, types::TraceEvent, OnTraceFn};
 use std::sync::Arc;
 
 let config = OrchestratorConfig {
@@ -576,7 +576,7 @@ Panics inside the callback are caught and do not affect execution.
 An in-process pub/sub bus for agent-to-agent communication. Cloning a `MessageBus` shares the same underlying state:
 
 ```rust
-use open_multi_agent::MessageBus;
+use open_multi_agent_rs::MessageBus;
 
 let bus = MessageBus::new();
 
@@ -605,7 +605,7 @@ unsub();
 Per-task retry is configured directly on each `Task`:
 
 ```rust
-use open_multi_agent::create_task;
+use open_multi_agent_rs::create_task;
 
 let mut task = create_task("title", "description", Some("agent".to_string()), vec![]);
 task.max_retries = Some(3);       // retry up to 3 times
@@ -616,7 +616,7 @@ task.retry_backoff = Some(2.0);   // exponential: 500 → 1000 → 2000ms (cappe
 Use `execute_with_retry` directly for custom retry loops:
 
 ```rust
-use open_multi_agent::{execute_with_retry, AgentRunResult, types::TokenUsage};
+use open_multi_agent_rs::{execute_with_retry, AgentRunResult, types::TokenUsage};
 use std::sync::Arc;
 
 let result = execute_with_retry(
@@ -633,7 +633,7 @@ let result = execute_with_retry(
 Pause execution between task rounds for human or automated review:
 
 ```rust
-use open_multi_agent::{OrchestratorConfig, types::Task};
+use open_multi_agent_rs::{OrchestratorConfig, types::Task};
 use futures::future::BoxFuture;
 use std::sync::Arc;
 

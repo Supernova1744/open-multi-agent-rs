@@ -2,7 +2,7 @@
 
 **Version:** 0.1.0  
 **Language:** Rust (Edition 2021)  
-**Crate name:** `open_multi_agent`
+**Crate name:** `open_multi_agent_rs`
 
 ---
 

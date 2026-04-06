@@ -7,7 +7,7 @@ with a feedback message listing the validation errors.
 ## Setting up a schema
 
 ```rust
-use open_multi_agent::{OrchestratorConfig, OpenMultiAgent, AgentConfig};
+use open_multi_agent_rs::{OrchestratorConfig, OpenMultiAgent, AgentConfig};
 
 let orchestrator = OpenMultiAgent::new(OrchestratorConfig {
     default_provider: "openrouter".to_string(),

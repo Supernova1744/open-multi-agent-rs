@@ -9,7 +9,9 @@
 ///
 /// Run:
 ///   cargo run --example 06_task_pipeline
-use open_multi_agent::{create_task, AgentConfig, OpenMultiAgent, OrchestratorConfig, TeamConfig};
+use open_multi_agent_rs::{
+    create_task, AgentConfig, OpenMultiAgent, OrchestratorConfig, TeamConfig,
+};
 
 fn api_key() -> String {
     dotenvy::dotenv().ok();

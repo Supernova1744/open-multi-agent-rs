@@ -3,8 +3,11 @@
 /// MessageBus, approval gates, retry, and new LLM adapters.
 mod mock_adapter;
 
+use async_trait::async_trait;
+use futures::future::BoxFuture;
+use futures::StreamExt;
 use mock_adapter::MockAdapter;
-use open_multi_agent::{
+use open_multi_agent_rs::{
     agent::Agent,
     create_task,
     error::AgentError,
@@ -19,9 +22,6 @@ use open_multi_agent::{
     },
     AgentStatus, OpenMultiAgent, RunOptions,
 };
-use async_trait::async_trait;
-use futures::future::BoxFuture;
-use futures::StreamExt;
 use std::collections::HashMap;
 use std::sync::{
     atomic::{AtomicUsize, Ordering},
@@ -37,7 +37,11 @@ fn make_agent(name: &str) -> Agent {
     let reg = Arc::new(TokioMutex::new(ToolRegistry::new()));
     let exec = Arc::new(ToolExecutor::new(Arc::clone(&reg)));
     Agent::new(
-        AgentConfig { name: name.to_string(), model: "mock".to_string(), ..Default::default() },
+        AgentConfig {
+            name: name.to_string(),
+            model: "mock".to_string(),
+            ..Default::default()
+        },
         reg,
         exec,
     )
@@ -98,19 +102,32 @@ async fn stream_done_event_contains_correct_result() {
 
 #[tokio::test]
 async fn stream_with_tool_call_yields_tool_use_then_result_then_done() {
-    use open_multi_agent::tool::Tool;
-    use open_multi_agent::types::ToolUseContext;
-    use open_multi_agent::error::Result;
+    use open_multi_agent_rs::error::Result;
+    use open_multi_agent_rs::tool::Tool;
+    use open_multi_agent_rs::types::ToolUseContext;
 
     struct EchoTool;
     #[async_trait]
     impl Tool for EchoTool {
-        fn name(&self) -> &str { "echo" }
-        fn description(&self) -> &str { "echoes input" }
-        fn input_schema(&self) -> serde_json::Value { serde_json::json!({}) }
-        async fn execute(&self, input: &HashMap<String, serde_json::Value>, _ctx: &ToolUseContext) -> Result<open_multi_agent::types::ToolResult> {
+        fn name(&self) -> &str {
+            "echo"
+        }
+        fn description(&self) -> &str {
+            "echoes input"
+        }
+        fn input_schema(&self) -> serde_json::Value {
+            serde_json::json!({})
+        }
+        async fn execute(
+            &self,
+            input: &HashMap<String, serde_json::Value>,
+            _ctx: &ToolUseContext,
+        ) -> Result<open_multi_agent_rs::types::ToolResult> {
             let v = input.get("msg").and_then(|v| v.as_str()).unwrap_or("?");
-            Ok(open_multi_agent::types::ToolResult { data: v.to_string(), is_error: false })
+            Ok(open_multi_agent_rs::types::ToolResult {
+                data: v.to_string(),
+                is_error: false,
+            })
         }
     }
 
@@ -118,8 +135,13 @@ async fn stream_with_tool_call_yields_tool_use_then_result_then_done() {
     reg.lock().await.register(Arc::new(EchoTool)).unwrap();
     let exec = Arc::new(ToolExecutor::new(Arc::clone(&reg)));
     let mut agent = Agent::new(
-        AgentConfig { name: "bot".to_string(), model: "mock".to_string(), ..Default::default() },
-        reg, exec,
+        AgentConfig {
+            name: "bot".to_string(),
+            model: "mock".to_string(),
+            ..Default::default()
+        },
+        reg,
+        exec,
     );
 
     let mut inp = HashMap::new();
@@ -143,7 +165,10 @@ async fn stream_with_tool_call_yields_tool_use_then_result_then_done() {
     }
 
     assert!(event_types.contains(&"tool_use"), "Expected tool_use event");
-    assert!(event_types.contains(&"tool_result"), "Expected tool_result event");
+    assert!(
+        event_types.contains(&"tool_result"),
+        "Expected tool_result event"
+    );
     assert!(event_types.contains(&"text"), "Expected text event");
     assert_eq!(event_types.last(), Some(&"done"), "Last event must be done");
 }
@@ -185,10 +210,16 @@ async fn before_run_hook_can_modify_prompt() {
     }
     #[async_trait]
     impl LLMAdapter for RecordingAdapter {
-        fn name(&self) -> &str { "recording" }
-        async fn chat(&self, messages: &[open_multi_agent::types::LLMMessage], opts: &open_multi_agent::types::LLMChatOptions) -> open_multi_agent::error::Result<open_multi_agent::types::LLMResponse> {
+        fn name(&self) -> &str {
+            "recording"
+        }
+        async fn chat(
+            &self,
+            messages: &[open_multi_agent_rs::types::LLMMessage],
+            opts: &open_multi_agent_rs::types::LLMChatOptions,
+        ) -> open_multi_agent_rs::error::Result<open_multi_agent_rs::types::LLMResponse> {
             for msg in messages.iter().rev() {
-                if msg.role == open_multi_agent::types::Role::User {
+                if msg.role == open_multi_agent_rs::types::Role::User {
                     let text: String = msg.content.iter().filter_map(|b| b.as_text()).collect();
                     self.received.lock().unwrap().push(text);
                     break;
@@ -199,18 +230,26 @@ async fn before_run_hook_can_modify_prompt() {
     }
 
     let inner = MockAdapter::arc(vec![MockAdapter::text("ok")]);
-    let adapter = Arc::new(RecordingAdapter { inner, received: Arc::clone(&received_clone) }) as Arc<dyn LLMAdapter>;
+    let adapter = Arc::new(RecordingAdapter {
+        inner,
+        received: Arc::clone(&received_clone),
+    }) as Arc<dyn LLMAdapter>;
 
     let mut agent = Agent::new(
         AgentConfig {
             name: "bot".to_string(),
             model: "mock".to_string(),
-            before_run: Some(Arc::new(|mut ctx: BeforeRunHookContext| -> BoxFuture<'static, open_multi_agent::error::Result<BeforeRunHookContext>> {
-                Box::pin(async move {
-                    ctx.prompt = format!("MODIFIED: {}", ctx.prompt);
-                    Ok(ctx)
-                })
-            })),
+            before_run: Some(Arc::new(
+                |mut ctx: BeforeRunHookContext| -> BoxFuture<
+                    'static,
+                    open_multi_agent_rs::error::Result<BeforeRunHookContext>,
+                > {
+                    Box::pin(async move {
+                        ctx.prompt = format!("MODIFIED: {}", ctx.prompt);
+                        Ok(ctx)
+                    })
+                },
+            )),
             ..Default::default()
         },
         reg,
@@ -220,7 +259,11 @@ async fn before_run_hook_can_modify_prompt() {
     agent.run("hello", adapter).await.unwrap();
 
     let messages = received_messages.lock().unwrap();
-    assert!(messages[0].starts_with("MODIFIED:"), "Prompt was not modified by before_run: {}", messages[0]);
+    assert!(
+        messages[0].starts_with("MODIFIED:"),
+        "Prompt was not modified by before_run: {}",
+        messages[0]
+    );
 }
 
 #[tokio::test]
@@ -229,13 +272,20 @@ async fn before_run_unchanged_prompt_passes_through() {
         AgentConfig {
             name: "bot".to_string(),
             model: "mock".to_string(),
-            before_run: Some(Arc::new(|ctx: BeforeRunHookContext| -> BoxFuture<'static, open_multi_agent::error::Result<BeforeRunHookContext>> {
-                Box::pin(async move { Ok(ctx) }) // no modification
-            })),
+            before_run: Some(Arc::new(
+                |ctx: BeforeRunHookContext| -> BoxFuture<
+                    'static,
+                    open_multi_agent_rs::error::Result<BeforeRunHookContext>,
+                > {
+                    Box::pin(async move { Ok(ctx) }) // no modification
+                },
+            )),
             ..Default::default()
         },
         Arc::new(TokioMutex::new(ToolRegistry::new())),
-        Arc::new(ToolExecutor::new(Arc::new(TokioMutex::new(ToolRegistry::new())))),
+        Arc::new(ToolExecutor::new(Arc::new(TokioMutex::new(
+            ToolRegistry::new(),
+        )))),
     );
     let adapter = dyn_adapter(vec![MockAdapter::text("unchanged")]);
     let result = agent.run("original prompt", adapter).await.unwrap();
@@ -249,15 +299,20 @@ async fn before_run_hook_abort_returns_failure() {
         AgentConfig {
             name: "bot".to_string(),
             model: "mock".to_string(),
-            before_run: Some(Arc::new(|_ctx: BeforeRunHookContext| -> BoxFuture<'static, open_multi_agent::error::Result<BeforeRunHookContext>> {
-                Box::pin(async move {
-                    Err(AgentError::Other("hook aborted".to_string()))
-                })
-            })),
+            before_run: Some(Arc::new(
+                |_ctx: BeforeRunHookContext| -> BoxFuture<
+                    'static,
+                    open_multi_agent_rs::error::Result<BeforeRunHookContext>,
+                > {
+                    Box::pin(async move { Err(AgentError::Other("hook aborted".to_string())) })
+                },
+            )),
             ..Default::default()
         },
         Arc::new(TokioMutex::new(ToolRegistry::new())),
-        Arc::new(ToolExecutor::new(Arc::new(TokioMutex::new(ToolRegistry::new())))),
+        Arc::new(ToolExecutor::new(Arc::new(TokioMutex::new(
+            ToolRegistry::new(),
+        )))),
     );
     let adapter = dyn_adapter(vec![MockAdapter::text("should not be called")]);
     let result = agent.run("anything", adapter).await.unwrap();
@@ -272,16 +327,26 @@ async fn after_run_hook_can_modify_output() {
         AgentConfig {
             name: "bot".to_string(),
             model: "mock".to_string(),
-            after_run: Some(Arc::new(|mut result: AgentRunResult| -> BoxFuture<'static, open_multi_agent::error::Result<AgentRunResult>> {
-                Box::pin(async move {
-                    result.output = format!("AFTER: {}", result.output);
-                    Ok(result)
-                })
-            })),
+            after_run:
+                Some(
+                    Arc::new(
+                        |mut result: AgentRunResult| -> BoxFuture<
+                            'static,
+                            open_multi_agent_rs::error::Result<AgentRunResult>,
+                        > {
+                            Box::pin(async move {
+                                result.output = format!("AFTER: {}", result.output);
+                                Ok(result)
+                            })
+                        },
+                    ),
+                ),
             ..Default::default()
         },
         Arc::new(TokioMutex::new(ToolRegistry::new())),
-        Arc::new(ToolExecutor::new(Arc::new(TokioMutex::new(ToolRegistry::new())))),
+        Arc::new(ToolExecutor::new(Arc::new(TokioMutex::new(
+            ToolRegistry::new(),
+        )))),
     );
     let adapter = dyn_adapter(vec![MockAdapter::text("original")]);
     let result = agent.run("go", adapter).await.unwrap();
@@ -295,15 +360,25 @@ async fn after_run_hook_abort_returns_failure() {
         AgentConfig {
             name: "bot".to_string(),
             model: "mock".to_string(),
-            after_run: Some(Arc::new(|_result: AgentRunResult| -> BoxFuture<'static, open_multi_agent::error::Result<AgentRunResult>> {
-                Box::pin(async move {
-                    Err(AgentError::Other("after_run failed".to_string()))
-                })
-            })),
+            after_run:
+                Some(
+                    Arc::new(
+                        |_result: AgentRunResult| -> BoxFuture<
+                            'static,
+                            open_multi_agent_rs::error::Result<AgentRunResult>,
+                        > {
+                            Box::pin(async move {
+                                Err(AgentError::Other("after_run failed".to_string()))
+                            })
+                        },
+                    ),
+                ),
             ..Default::default()
         },
         Arc::new(TokioMutex::new(ToolRegistry::new())),
-        Arc::new(ToolExecutor::new(Arc::new(TokioMutex::new(ToolRegistry::new())))),
+        Arc::new(ToolExecutor::new(Arc::new(TokioMutex::new(
+            ToolRegistry::new(),
+        )))),
     );
     let adapter = dyn_adapter(vec![MockAdapter::text("ok")]);
     let result = agent.run("go", adapter).await.unwrap();
@@ -318,23 +393,36 @@ async fn before_and_after_hooks_compose_correctly() {
     let log_before = Arc::clone(&log);
     let log_after = Arc::clone(&log);
 
-    let mut agent = Agent::new(
-        AgentConfig {
-            name: "bot".to_string(),
-            model: "mock".to_string(),
-            before_run: Some(Arc::new(move |ctx: BeforeRunHookContext| -> BoxFuture<'static, open_multi_agent::error::Result<BeforeRunHookContext>> {
-                log_before.lock().unwrap().push("before");
-                Box::pin(async move { Ok(ctx) })
-            })),
-            after_run: Some(Arc::new(move |result: AgentRunResult| -> BoxFuture<'static, open_multi_agent::error::Result<AgentRunResult>> {
-                log_after.lock().unwrap().push("after");
-                Box::pin(async move { Ok(result) })
-            })),
-            ..Default::default()
-        },
-        Arc::new(TokioMutex::new(ToolRegistry::new())),
-        Arc::new(ToolExecutor::new(Arc::new(TokioMutex::new(ToolRegistry::new())))),
-    );
+    let mut agent =
+        Agent::new(
+            AgentConfig {
+                name: "bot".to_string(),
+                model: "mock".to_string(),
+                before_run: Some(Arc::new(
+                    move |ctx: BeforeRunHookContext| -> BoxFuture<
+                        'static,
+                        open_multi_agent_rs::error::Result<BeforeRunHookContext>,
+                    > {
+                        log_before.lock().unwrap().push("before");
+                        Box::pin(async move { Ok(ctx) })
+                    },
+                )),
+                after_run: Some(Arc::new(
+                    move |result: AgentRunResult| -> BoxFuture<
+                        'static,
+                        open_multi_agent_rs::error::Result<AgentRunResult>,
+                    > {
+                        log_after.lock().unwrap().push("after");
+                        Box::pin(async move { Ok(result) })
+                    },
+                )),
+                ..Default::default()
+            },
+            Arc::new(TokioMutex::new(ToolRegistry::new())),
+            Arc::new(ToolExecutor::new(Arc::new(TokioMutex::new(
+                ToolRegistry::new(),
+            )))),
+        );
     let adapter = dyn_adapter(vec![MockAdapter::text("result")]);
     let result = agent.run("go", adapter).await.unwrap();
     assert!(result.success);
@@ -351,14 +439,21 @@ async fn hooks_fire_on_prompt_calls_too() {
         AgentConfig {
             name: "bot".to_string(),
             model: "mock".to_string(),
-            before_run: Some(Arc::new(move |ctx: BeforeRunHookContext| -> BoxFuture<'static, open_multi_agent::error::Result<BeforeRunHookContext>> {
-                cc.fetch_add(1, Ordering::SeqCst);
-                Box::pin(async move { Ok(ctx) })
-            })),
+            before_run: Some(Arc::new(
+                move |ctx: BeforeRunHookContext| -> BoxFuture<
+                    'static,
+                    open_multi_agent_rs::error::Result<BeforeRunHookContext>,
+                > {
+                    cc.fetch_add(1, Ordering::SeqCst);
+                    Box::pin(async move { Ok(ctx) })
+                },
+            )),
             ..Default::default()
         },
         Arc::new(TokioMutex::new(ToolRegistry::new())),
-        Arc::new(ToolExecutor::new(Arc::new(TokioMutex::new(ToolRegistry::new())))),
+        Arc::new(ToolExecutor::new(Arc::new(TokioMutex::new(
+            ToolRegistry::new(),
+        )))),
     );
 
     let adapter = dyn_adapter(vec![
@@ -387,7 +482,9 @@ async fn structured_output_valid_json_sets_structured_field() {
             ..Default::default()
         },
         Arc::new(TokioMutex::new(ToolRegistry::new())),
-        Arc::new(ToolExecutor::new(Arc::new(TokioMutex::new(ToolRegistry::new())))),
+        Arc::new(ToolExecutor::new(Arc::new(TokioMutex::new(
+            ToolRegistry::new(),
+        )))),
     );
     let adapter = dyn_adapter(vec![MockAdapter::text(r#"{"name": "Alice", "age": 30}"#)]);
     let result = agent.run("output json", adapter).await.unwrap();
@@ -407,11 +504,13 @@ async fn structured_output_fenced_json_is_extracted() {
             ..Default::default()
         },
         Arc::new(TokioMutex::new(ToolRegistry::new())),
-        Arc::new(ToolExecutor::new(Arc::new(TokioMutex::new(ToolRegistry::new())))),
+        Arc::new(ToolExecutor::new(Arc::new(TokioMutex::new(
+            ToolRegistry::new(),
+        )))),
     );
-    let adapter = dyn_adapter(vec![
-        MockAdapter::text("Here is the output:\n```json\n{\"status\": \"ok\"}\n```"),
-    ]);
+    let adapter = dyn_adapter(vec![MockAdapter::text(
+        "Here is the output:\n```json\n{\"status\": \"ok\"}\n```",
+    )]);
     let result = agent.run("go", adapter).await.unwrap();
     assert!(result.success);
     assert_eq!(result.structured.unwrap()["status"], "ok");
@@ -429,7 +528,9 @@ async fn structured_output_invalid_json_triggers_retry() {
             ..Default::default()
         },
         Arc::new(TokioMutex::new(ToolRegistry::new())),
-        Arc::new(ToolExecutor::new(Arc::new(TokioMutex::new(ToolRegistry::new())))),
+        Arc::new(ToolExecutor::new(Arc::new(TokioMutex::new(
+            ToolRegistry::new(),
+        )))),
     );
     let adapter = dyn_adapter(vec![
         MockAdapter::text("not valid json at all"),
@@ -453,7 +554,9 @@ async fn structured_output_both_attempts_fail_returns_no_structured() {
             ..Default::default()
         },
         Arc::new(TokioMutex::new(ToolRegistry::new())),
-        Arc::new(ToolExecutor::new(Arc::new(TokioMutex::new(ToolRegistry::new())))),
+        Arc::new(ToolExecutor::new(Arc::new(TokioMutex::new(
+            ToolRegistry::new(),
+        )))),
     );
     let adapter = dyn_adapter(vec![
         MockAdapter::text("bad json attempt 1"),
@@ -474,7 +577,9 @@ async fn structured_output_missing_required_field_triggers_retry() {
             ..Default::default()
         },
         Arc::new(TokioMutex::new(ToolRegistry::new())),
-        Arc::new(ToolExecutor::new(Arc::new(TokioMutex::new(ToolRegistry::new())))),
+        Arc::new(ToolExecutor::new(Arc::new(TokioMutex::new(
+            ToolRegistry::new(),
+        )))),
     );
     let adapter = dyn_adapter(vec![
         MockAdapter::text(r#"{"id": 1}"#),               // missing "value"
@@ -495,10 +600,12 @@ async fn structured_output_type_mismatch_triggers_retry() {
             ..Default::default()
         },
         Arc::new(TokioMutex::new(ToolRegistry::new())),
-        Arc::new(ToolExecutor::new(Arc::new(TokioMutex::new(ToolRegistry::new())))),
+        Arc::new(ToolExecutor::new(Arc::new(TokioMutex::new(
+            ToolRegistry::new(),
+        )))),
     );
     let adapter = dyn_adapter(vec![
-        MockAdapter::text(r#"[1, 2, 3]"#),  // array, not object
+        MockAdapter::text(r#"[1, 2, 3]"#), // array, not object
         MockAdapter::text(r#"{"ok": true}"#),
     ]);
     let result = agent.run("go", adapter).await.unwrap();
@@ -518,7 +625,10 @@ async fn no_output_schema_structured_field_is_none() {
 // 4. TRACE EVENT TESTS
 // ---------------------------------------------------------------------------
 
-fn collect_trace_events() -> (Arc<Mutex<Vec<TraceEvent>>>, open_multi_agent::types::OnTraceFn) {
+fn collect_trace_events() -> (
+    Arc<Mutex<Vec<TraceEvent>>>,
+    open_multi_agent_rs::types::OnTraceFn,
+) {
     let events: Arc<Mutex<Vec<TraceEvent>>> = Arc::new(Mutex::new(vec![]));
     let events_clone = Arc::clone(&events);
     let on_trace = Arc::new(move |ev: TraceEvent| {
@@ -533,7 +643,10 @@ async fn trace_llm_call_emitted_for_each_turn() {
     let mut agent = make_agent("bot");
     let adapter = dyn_adapter(vec![MockAdapter::text("done")]);
 
-    let opts = RunOptions { on_trace: Some(on_trace), ..Default::default() };
+    let opts = RunOptions {
+        on_trace: Some(on_trace),
+        ..Default::default()
+    };
     agent.run_with_opts("hi", adapter, opts).await.unwrap();
 
     let collected = events.lock().unwrap();
@@ -541,23 +654,41 @@ async fn trace_llm_call_emitted_for_each_turn() {
         .iter()
         .filter(|e| matches!(e, TraceEvent::LlmCall(_)))
         .collect();
-    assert_eq!(llm_calls.len(), 1, "Expected 1 llm_call trace, got {}", llm_calls.len());
+    assert_eq!(
+        llm_calls.len(),
+        1,
+        "Expected 1 llm_call trace, got {}",
+        llm_calls.len()
+    );
 }
 
 #[tokio::test]
 async fn trace_multiple_turns_emit_multiple_llm_calls() {
-    use open_multi_agent::tool::Tool;
-    use open_multi_agent::types::ToolUseContext;
-    use open_multi_agent::error::Result as AgentResult;
+    use open_multi_agent_rs::error::Result as AgentResult;
+    use open_multi_agent_rs::tool::Tool;
+    use open_multi_agent_rs::types::ToolUseContext;
 
     struct NopTool;
     #[async_trait]
     impl Tool for NopTool {
-        fn name(&self) -> &str { "nop" }
-        fn description(&self) -> &str { "noop" }
-        fn input_schema(&self) -> serde_json::Value { serde_json::json!({}) }
-        async fn execute(&self, _: &HashMap<String, serde_json::Value>, _: &ToolUseContext) -> AgentResult<open_multi_agent::types::ToolResult> {
-            Ok(open_multi_agent::types::ToolResult { data: "done".to_string(), is_error: false })
+        fn name(&self) -> &str {
+            "nop"
+        }
+        fn description(&self) -> &str {
+            "noop"
+        }
+        fn input_schema(&self) -> serde_json::Value {
+            serde_json::json!({})
+        }
+        async fn execute(
+            &self,
+            _: &HashMap<String, serde_json::Value>,
+            _: &ToolUseContext,
+        ) -> AgentResult<open_multi_agent_rs::types::ToolResult> {
+            Ok(open_multi_agent_rs::types::ToolResult {
+                data: "done".to_string(),
+                is_error: false,
+            })
         }
     }
 
@@ -565,8 +696,13 @@ async fn trace_multiple_turns_emit_multiple_llm_calls() {
     reg.lock().await.register(Arc::new(NopTool)).unwrap();
     let exec = Arc::new(ToolExecutor::new(Arc::clone(&reg)));
     let mut agent = Agent::new(
-        AgentConfig { name: "bot".to_string(), model: "mock".to_string(), ..Default::default() },
-        reg, exec,
+        AgentConfig {
+            name: "bot".to_string(),
+            model: "mock".to_string(),
+            ..Default::default()
+        },
+        reg,
+        exec,
     );
 
     let mut inp = HashMap::new();
@@ -577,13 +713,25 @@ async fn trace_multiple_turns_emit_multiple_llm_calls() {
     ]);
 
     let (events, on_trace) = collect_trace_events();
-    let opts = RunOptions { on_trace: Some(on_trace), ..Default::default() };
+    let opts = RunOptions {
+        on_trace: Some(on_trace),
+        ..Default::default()
+    };
     agent.run_with_opts("go", adapter, opts).await.unwrap();
 
     let collected = events.lock().unwrap();
-    let llm_calls = collected.iter().filter(|e| matches!(e, TraceEvent::LlmCall(_))).count();
-    let tool_calls = collected.iter().filter(|e| matches!(e, TraceEvent::ToolCall(_))).count();
-    let agent_events = collected.iter().filter(|e| matches!(e, TraceEvent::Agent(_))).count();
+    let llm_calls = collected
+        .iter()
+        .filter(|e| matches!(e, TraceEvent::LlmCall(_)))
+        .count();
+    let tool_calls = collected
+        .iter()
+        .filter(|e| matches!(e, TraceEvent::ToolCall(_)))
+        .count();
+    let agent_events = collected
+        .iter()
+        .filter(|e| matches!(e, TraceEvent::Agent(_)))
+        .count();
 
     assert_eq!(llm_calls, 2, "Two LLM turns (tool-call + final)");
     assert_eq!(tool_calls, 1, "One tool call");
@@ -595,7 +743,10 @@ async fn trace_agent_event_emitted_at_end() {
     let (events, on_trace) = collect_trace_events();
     let mut agent = make_agent("bot");
     let adapter = dyn_adapter(vec![MockAdapter::text("ok")]);
-    let opts = RunOptions { on_trace: Some(on_trace), ..Default::default() };
+    let opts = RunOptions {
+        on_trace: Some(on_trace),
+        ..Default::default()
+    };
     agent.run_with_opts("test", adapter, opts).await.unwrap();
 
     let collected = events.lock().unwrap();
@@ -613,18 +764,31 @@ async fn trace_agent_event_emitted_at_end() {
 
 #[tokio::test]
 async fn trace_tool_call_has_is_error_false_on_success() {
-    use open_multi_agent::tool::Tool;
-    use open_multi_agent::types::ToolUseContext;
-    use open_multi_agent::error::Result as AgentResult;
+    use open_multi_agent_rs::error::Result as AgentResult;
+    use open_multi_agent_rs::tool::Tool;
+    use open_multi_agent_rs::types::ToolUseContext;
 
     struct OkTool;
     #[async_trait]
     impl Tool for OkTool {
-        fn name(&self) -> &str { "ok_tool" }
-        fn description(&self) -> &str { "succeeds" }
-        fn input_schema(&self) -> serde_json::Value { serde_json::json!({}) }
-        async fn execute(&self, _: &HashMap<String, serde_json::Value>, _: &ToolUseContext) -> AgentResult<open_multi_agent::types::ToolResult> {
-            Ok(open_multi_agent::types::ToolResult { data: "success".to_string(), is_error: false })
+        fn name(&self) -> &str {
+            "ok_tool"
+        }
+        fn description(&self) -> &str {
+            "succeeds"
+        }
+        fn input_schema(&self) -> serde_json::Value {
+            serde_json::json!({})
+        }
+        async fn execute(
+            &self,
+            _: &HashMap<String, serde_json::Value>,
+            _: &ToolUseContext,
+        ) -> AgentResult<open_multi_agent_rs::types::ToolResult> {
+            Ok(open_multi_agent_rs::types::ToolResult {
+                data: "success".to_string(),
+                is_error: false,
+            })
         }
     }
 
@@ -632,8 +796,13 @@ async fn trace_tool_call_has_is_error_false_on_success() {
     reg.lock().await.register(Arc::new(OkTool)).unwrap();
     let exec = Arc::new(ToolExecutor::new(Arc::clone(&reg)));
     let mut agent = Agent::new(
-        AgentConfig { name: "bot".to_string(), model: "mock".to_string(), ..Default::default() },
-        reg, exec,
+        AgentConfig {
+            name: "bot".to_string(),
+            model: "mock".to_string(),
+            ..Default::default()
+        },
+        reg,
+        exec,
     );
 
     let adapter = dyn_adapter(vec![
@@ -641,12 +810,29 @@ async fn trace_tool_call_has_is_error_false_on_success() {
         MockAdapter::text("done"),
     ]);
     let (events, on_trace) = collect_trace_events();
-    agent.run_with_opts("go", adapter, RunOptions { on_trace: Some(on_trace), ..Default::default() }).await.unwrap();
+    agent
+        .run_with_opts(
+            "go",
+            adapter,
+            RunOptions {
+                on_trace: Some(on_trace),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
 
     let collected = events.lock().unwrap();
-    let tool_traces: Vec<_> = collected.iter().filter_map(|e| {
-        if let TraceEvent::ToolCall(tc) = e { Some(tc) } else { None }
-    }).collect();
+    let tool_traces: Vec<_> = collected
+        .iter()
+        .filter_map(|e| {
+            if let TraceEvent::ToolCall(tc) = e {
+                Some(tc)
+            } else {
+                None
+            }
+        })
+        .collect();
     assert_eq!(tool_traces.len(), 1);
     assert!(!tool_traces[0].is_error);
     assert_eq!(tool_traces[0].tool, "ok_tool");
@@ -659,7 +845,10 @@ async fn trace_panic_in_callback_does_not_crash_agent() {
     });
     let mut agent = make_agent("bot");
     let adapter = dyn_adapter(vec![MockAdapter::text("survived")]);
-    let opts = RunOptions { on_trace: Some(on_trace), ..Default::default() };
+    let opts = RunOptions {
+        on_trace: Some(on_trace),
+        ..Default::default()
+    };
     // Should not panic; emit_trace catches panics.
     let result = agent.run_with_opts("test", adapter, opts).await.unwrap();
     assert!(result.success);
@@ -696,18 +885,31 @@ async fn trace_run_id_forwarded_to_events() {
 
 #[tokio::test]
 async fn on_tool_call_callback_fires_before_execution() {
-    use open_multi_agent::tool::Tool;
-    use open_multi_agent::types::ToolUseContext;
-    use open_multi_agent::error::Result as AgentResult;
+    use open_multi_agent_rs::error::Result as AgentResult;
+    use open_multi_agent_rs::tool::Tool;
+    use open_multi_agent_rs::types::ToolUseContext;
 
     struct NopTool2;
     #[async_trait]
     impl Tool for NopTool2 {
-        fn name(&self) -> &str { "nop2" }
-        fn description(&self) -> &str { "noop" }
-        fn input_schema(&self) -> serde_json::Value { serde_json::json!({}) }
-        async fn execute(&self, _: &HashMap<String, serde_json::Value>, _: &ToolUseContext) -> AgentResult<open_multi_agent::types::ToolResult> {
-            Ok(open_multi_agent::types::ToolResult { data: "x".to_string(), is_error: false })
+        fn name(&self) -> &str {
+            "nop2"
+        }
+        fn description(&self) -> &str {
+            "noop"
+        }
+        fn input_schema(&self) -> serde_json::Value {
+            serde_json::json!({})
+        }
+        async fn execute(
+            &self,
+            _: &HashMap<String, serde_json::Value>,
+            _: &ToolUseContext,
+        ) -> AgentResult<open_multi_agent_rs::types::ToolResult> {
+            Ok(open_multi_agent_rs::types::ToolResult {
+                data: "x".to_string(),
+                is_error: false,
+            })
         }
     }
 
@@ -715,8 +917,13 @@ async fn on_tool_call_callback_fires_before_execution() {
     reg.lock().await.register(Arc::new(NopTool2)).unwrap();
     let exec = Arc::new(ToolExecutor::new(Arc::clone(&reg)));
     let mut agent = Agent::new(
-        AgentConfig { name: "bot".to_string(), model: "mock".to_string(), ..Default::default() },
-        reg, exec,
+        AgentConfig {
+            name: "bot".to_string(),
+            model: "mock".to_string(),
+            ..Default::default()
+        },
+        reg,
+        exec,
     );
 
     let tool_names: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(vec![]));
@@ -822,7 +1029,9 @@ async fn message_bus_conversation_retrieval() {
 
     let conv = bus.get_conversation("alice", "bob");
     assert_eq!(conv.len(), 2);
-    assert!(conv.iter().all(|m| (m.from == "alice" && m.to == "bob") || (m.from == "bob" && m.to == "alice")));
+    assert!(conv
+        .iter()
+        .all(|m| (m.from == "alice" && m.to == "bob") || (m.from == "bob" && m.to == "alice")));
 }
 
 #[tokio::test]
@@ -841,8 +1050,12 @@ async fn message_bus_multiple_subscribers_all_notified() {
     let c1 = Arc::clone(&count1);
     let c2 = Arc::clone(&count2);
 
-    let _sub1 = bus.subscribe("bob", move |_| { c1.fetch_add(1, Ordering::SeqCst); });
-    let _sub2 = bus.subscribe("bob", move |_| { c2.fetch_add(1, Ordering::SeqCst); });
+    let _sub1 = bus.subscribe("bob", move |_| {
+        c1.fetch_add(1, Ordering::SeqCst);
+    });
+    let _sub2 = bus.subscribe("bob", move |_| {
+        c2.fetch_add(1, Ordering::SeqCst);
+    });
 
     bus.send("alice", "bob", "ping");
 
@@ -897,16 +1110,18 @@ async fn approval_gate_via_orchestrator_reject_stops_pipeline() {
         default_model: "mock".to_string(),
         default_provider: "openrouter".to_string(),
         default_api_key: Some("test-key".to_string()),
-        on_approval: Some(Arc::new(|completed: Vec<Task>, _next: Vec<Task>| -> BoxFuture<'static, bool> {
-            // Reject after the first round completes
-            let approved = completed.is_empty(); // approve only the very first (empty) round
-            Box::pin(async move { approved })
-        })),
+        on_approval: Some(Arc::new(
+            |completed: Vec<Task>, _next: Vec<Task>| -> BoxFuture<'static, bool> {
+                // Reject after the first round completes
+                let approved = completed.is_empty(); // approve only the very first (empty) round
+                Box::pin(async move { approved })
+            },
+        )),
         ..Default::default()
     };
 
     let orchestrator = OpenMultiAgent::new(oc);
-    let team = open_multi_agent::types::TeamConfig {
+    let team = open_multi_agent_rs::types::TeamConfig {
         name: "team".to_string(),
         agents: vec![AgentConfig {
             name: "worker".to_string(),
@@ -941,20 +1156,23 @@ async fn approval_gate_via_orchestrator_reject_stops_pipeline() {
 async fn retry_succeeds_immediately_with_no_retry_config() {
     let task = make_task("T");
     let result = execute_with_retry(
-        || Box::pin(async {
-            Ok(AgentRunResult {
-                success: true,
-                output: "ok".to_string(),
-                messages: vec![],
-                token_usage: TokenUsage::default(),
-                tool_calls: vec![],
-                turns: 1,
-                structured: None,
+        || {
+            Box::pin(async {
+                Ok(AgentRunResult {
+                    success: true,
+                    output: "ok".to_string(),
+                    messages: vec![],
+                    token_usage: TokenUsage::default(),
+                    tool_calls: vec![],
+                    turns: 1,
+                    structured: None,
+                })
             })
-        }),
+        },
         &task,
         None,
-    ).await;
+    )
+    .await;
     assert!(result.success);
     assert_eq!(result.output, "ok");
 }
@@ -980,7 +1198,10 @@ async fn retry_retries_on_error_and_succeeds() {
                         success: true,
                         output: "finally ok".to_string(),
                         messages: vec![],
-                        token_usage: TokenUsage { input_tokens: 5, output_tokens: 5 },
+                        token_usage: TokenUsage {
+                            input_tokens: 5,
+                            output_tokens: 5,
+                        },
                         tool_calls: vec![],
                         turns: 1,
                         structured: None,
@@ -990,7 +1211,8 @@ async fn retry_retries_on_error_and_succeeds() {
         },
         &task,
         None,
-    ).await;
+    )
+    .await;
 
     assert!(result.success);
     assert_eq!(result.output, "finally ok");
@@ -1007,7 +1229,8 @@ async fn retry_exhausts_and_returns_last_error() {
         || Box::pin(async { Err(AgentError::Other("always fails".to_string())) }),
         &task,
         None,
-    ).await;
+    )
+    .await;
 
     assert!(!result.success);
     assert!(result.output.contains("always fails"));
@@ -1030,9 +1253,16 @@ async fn retry_accumulates_token_usage_across_attempts() {
                 let n = cc.fetch_add(1, Ordering::SeqCst);
                 Ok(AgentRunResult {
                     success: n >= 2, // succeed on 3rd attempt
-                    output: if n >= 2 { "ok".to_string() } else { "fail".to_string() },
+                    output: if n >= 2 {
+                        "ok".to_string()
+                    } else {
+                        "fail".to_string()
+                    },
                     messages: vec![],
-                    token_usage: TokenUsage { input_tokens: 10, output_tokens: 5 },
+                    token_usage: TokenUsage {
+                        input_tokens: 10,
+                        output_tokens: 5,
+                    },
                     tool_calls: vec![],
                     turns: 1,
                     structured: None,
@@ -1041,7 +1271,8 @@ async fn retry_accumulates_token_usage_across_attempts() {
         },
         &task,
         None,
-    ).await;
+    )
+    .await;
 
     assert!(result.success);
     // 3 attempts × (10 in, 5 out) = 30 in, 15 out
@@ -1083,17 +1314,20 @@ async fn retry_on_retry_callback_fires_between_attempts() {
             })
         },
         &task,
-        Some(Arc::new(move |attempt: u32, _max: u32, _err: String, delay: u64| {
-            re.lock().unwrap().push((attempt, delay));
-        }) as Arc<dyn Fn(u32, u32, String, u64) + Send + Sync>),
-    ).await;
+        Some(
+            Arc::new(move |attempt: u32, _max: u32, _err: String, delay: u64| {
+                re.lock().unwrap().push((attempt, delay));
+            }) as Arc<dyn Fn(u32, u32, String, u64) + Send + Sync>,
+        ),
+    )
+    .await;
 
     assert!(result.success);
     let events = retry_events.lock().unwrap();
     assert_eq!(events.len(), 2); // 2 retries
-    assert_eq!(events[0].0, 1);  // first retry after attempt 1
-    assert_eq!(events[1].0, 2);  // second retry after attempt 2
-    // backoff: attempt 1 → 1ms, attempt 2 → 2ms
+    assert_eq!(events[0].0, 1); // first retry after attempt 1
+    assert_eq!(events[1].0, 2); // second retry after attempt 2
+                                // backoff: attempt 1 → 1ms, attempt 2 → 2ms
     assert_eq!(events[0].1, 1);
     assert_eq!(events[1].1, 2);
 }
@@ -1124,29 +1358,50 @@ async fn compute_retry_delay_constant_when_backoff_is_one() {
 
 #[tokio::test]
 async fn parallel_tool_calls_in_single_turn_all_executed() {
-    use open_multi_agent::tool::Tool;
-    use open_multi_agent::types::ToolUseContext;
-    use open_multi_agent::error::Result as AgentResult;
+    use open_multi_agent_rs::error::Result as AgentResult;
+    use open_multi_agent_rs::tool::Tool;
+    use open_multi_agent_rs::types::ToolUseContext;
 
     let counter = Arc::new(AtomicUsize::new(0));
     struct CountTool(Arc<AtomicUsize>);
     #[async_trait]
     impl Tool for CountTool {
-        fn name(&self) -> &str { "count" }
-        fn description(&self) -> &str { "counts" }
-        fn input_schema(&self) -> serde_json::Value { serde_json::json!({}) }
-        async fn execute(&self, _: &HashMap<String, serde_json::Value>, _: &ToolUseContext) -> AgentResult<open_multi_agent::types::ToolResult> {
+        fn name(&self) -> &str {
+            "count"
+        }
+        fn description(&self) -> &str {
+            "counts"
+        }
+        fn input_schema(&self) -> serde_json::Value {
+            serde_json::json!({})
+        }
+        async fn execute(
+            &self,
+            _: &HashMap<String, serde_json::Value>,
+            _: &ToolUseContext,
+        ) -> AgentResult<open_multi_agent_rs::types::ToolResult> {
             self.0.fetch_add(1, Ordering::Relaxed);
-            Ok(open_multi_agent::types::ToolResult { data: "counted".to_string(), is_error: false })
+            Ok(open_multi_agent_rs::types::ToolResult {
+                data: "counted".to_string(),
+                is_error: false,
+            })
         }
     }
 
     let reg = Arc::new(TokioMutex::new(ToolRegistry::new()));
-    reg.lock().await.register(Arc::new(CountTool(Arc::clone(&counter)))).unwrap();
+    reg.lock()
+        .await
+        .register(Arc::new(CountTool(Arc::clone(&counter))))
+        .unwrap();
     let exec = Arc::new(ToolExecutor::new(Arc::clone(&reg)));
     let mut agent = Agent::new(
-        AgentConfig { name: "bot".to_string(), model: "mock".to_string(), ..Default::default() },
-        reg, exec,
+        AgentConfig {
+            name: "bot".to_string(),
+            model: "mock".to_string(),
+            ..Default::default()
+        },
+        reg,
+        exec,
     );
 
     // One LLM response with 3 tool calls at once
@@ -1174,28 +1429,31 @@ async fn parallel_tool_calls_in_single_turn_all_executed() {
 // We test the internal wire format via serde_json without making HTTP calls.
 #[test]
 fn anthropic_adapter_constructs_without_panicking() {
-    use open_multi_agent::llm::anthropic::AnthropicAdapter;
+    use open_multi_agent_rs::llm::anthropic::AnthropicAdapter;
     let adapter = AnthropicAdapter::new("test-key".to_string(), None);
     assert_eq!(adapter.name(), "anthropic");
 }
 
 #[test]
 fn openai_adapter_constructs_without_panicking() {
-    use open_multi_agent::llm::openai::OpenAIAdapter;
+    use open_multi_agent_rs::llm::openai::OpenAIAdapter;
     let adapter = OpenAIAdapter::new("test-key".to_string(), None);
     assert_eq!(adapter.name(), "openai");
 }
 
 #[test]
 fn openrouter_adapter_constructs_without_panicking() {
-    use open_multi_agent::llm::openrouter::OpenRouterAdapter;
-    let adapter = OpenRouterAdapter::new("test-key".to_string(), "https://openrouter.ai/api/v1".to_string());
+    use open_multi_agent_rs::llm::openrouter::OpenRouterAdapter;
+    let adapter = OpenRouterAdapter::new(
+        "test-key".to_string(),
+        "https://openrouter.ai/api/v1".to_string(),
+    );
     assert_eq!(adapter.name(), "openrouter");
 }
 
 #[test]
 fn create_adapter_factory_returns_correct_provider() {
-    use open_multi_agent::create_adapter;
+    use open_multi_agent_rs::create_adapter;
     let a = create_adapter("anthropic", Some("key".to_string()), None);
     assert_eq!(a.name(), "anthropic");
 
@@ -1212,7 +1470,11 @@ fn create_adapter_factory_returns_correct_provider() {
 
 #[test]
 fn create_adapter_custom_base_url() {
-    use open_multi_agent::create_adapter;
-    let a = create_adapter("openai", Some("key".to_string()), Some("https://my-proxy.com/v1".to_string()));
+    use open_multi_agent_rs::create_adapter;
+    let a = create_adapter(
+        "openai",
+        Some("key".to_string()),
+        Some("https://my-proxy.com/v1".to_string()),
+    );
     assert_eq!(a.name(), "openai");
 }

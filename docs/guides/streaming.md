@@ -8,7 +8,7 @@ for `StreamEvent::Done`.
 
 ```rust
 use futures::StreamExt;
-use open_multi_agent::types::StreamEvent;
+use open_multi_agent_rs::types::StreamEvent;
 
 let mut stream = agent.stream("Explain async/await in Rust.", Arc::clone(&adapter));
 tokio::pin!(stream);
@@ -84,7 +84,7 @@ If you need the complete result without processing individual events:
 
 ```rust
 use futures::StreamExt;
-use open_multi_agent::types::{StreamEvent, RunResult};
+use open_multi_agent_rs::types::{StreamEvent, RunResult};
 
 let mut result = None;
 let mut stream = Box::pin(agent.stream(prompt, adapter));

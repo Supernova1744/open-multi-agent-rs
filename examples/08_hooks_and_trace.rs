@@ -9,7 +9,7 @@
 /// Run:
 ///   cargo run --example 08_hooks_and_trace
 use futures::future::BoxFuture;
-use open_multi_agent::{
+use open_multi_agent_rs::{
     error::Result,
     types::{AgentConfig, AgentRunResult, BeforeRunHookContext, TraceEvent},
     AgentConfig as _, OpenMultiAgent, OrchestratorConfig,

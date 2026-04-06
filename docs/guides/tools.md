@@ -9,12 +9,12 @@ run a calculation, read a file — and receive structured results back before co
 use std::collections::HashMap;
 use std::sync::Arc;
 use async_trait::async_trait;
-use open_multi_agent::{
+use open_multi_agent_rs::{
     error::Result,
     tool::{ToolRegistry, ToolExecutor},
     types::{ToolResult, ToolUseContext},
 };
-use open_multi_agent::tool::Tool;
+use open_multi_agent_rs::tool::Tool;
 
 struct WordCount;
 

@@ -13,7 +13,7 @@ name = "demo"
 path = "src/main.rs"
 
 [lib]
-name = "open_multi_agent"
+name = "open_multi_agent_rs"
 path = "src/lib.rs"
 
 [[example]]

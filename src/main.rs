@@ -4,7 +4,9 @@
 ///
 /// Run with:
 ///   cargo run --bin demo
-use open_multi_agent::{create_task, AgentConfig, OpenMultiAgent, OrchestratorConfig, TeamConfig};
+use open_multi_agent_rs::{
+    create_task, AgentConfig, OpenMultiAgent, OrchestratorConfig, TeamConfig,
+};
 
 fn load_env() {
     dotenvy::dotenv().ok(); // silently ignore if .env is absent
@@ -92,18 +94,18 @@ async fn test_multi_turn() {
     let _orchestrator = make_orchestrator();
     let config = make_agent("tutor", "You are a concise math tutor.");
 
-    let registry = open_multi_agent::ToolRegistry::new();
+    let registry = open_multi_agent_rs::ToolRegistry::new();
     let registry = std::sync::Arc::new(tokio::sync::Mutex::new(registry));
-    let executor = std::sync::Arc::new(open_multi_agent::ToolExecutor::new(std::sync::Arc::clone(
-        &registry,
-    )));
-    let adapter = std::sync::Arc::from(open_multi_agent::create_adapter(
+    let executor = std::sync::Arc::new(open_multi_agent_rs::ToolExecutor::new(
+        std::sync::Arc::clone(&registry),
+    ));
+    let adapter = std::sync::Arc::from(open_multi_agent_rs::create_adapter(
         "openrouter",
         Some(openrouter_api_key()),
         Some(OPENROUTER_BASE_URL.to_string()),
     ));
 
-    let mut agent = open_multi_agent::agent::Agent::new(config, registry, executor);
+    let mut agent = open_multi_agent_rs::agent::Agent::new(config, registry, executor);
 
     println!("Turn 1: What is 2 + 2?");
     match agent

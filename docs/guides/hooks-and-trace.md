@@ -10,7 +10,7 @@ run starts, and just after each successful run completes.
 ```rust
 use futures::future::BoxFuture;
 use std::sync::Arc;
-use open_multi_agent::{
+use open_multi_agent_rs::{
     AgentConfig,
     types::{BeforeRunHookContext, BeforeRunHookAsync},
     error::Result,
@@ -44,7 +44,7 @@ let config = AgentConfig {
 ### `after_run` — modify or abort after the LLM responds
 
 ```rust
-use open_multi_agent::types::{AgentRunResult, AfterRunHookAsync};
+use open_multi_agent_rs::types::{AgentRunResult, AfterRunHookAsync};
 
 let after: AfterRunHookAsync = Arc::new(|mut result: AgentRunResult| -> BoxFuture<'static, Result<AgentRunResult>> {
     Box::pin(async move {
@@ -71,7 +71,7 @@ The orchestrator records the run as failed and the error propagates as normal.
 ```rust
 let guard: BeforeRunHookAsync = Arc::new(|ctx| Box::pin(async move {
     if ctx.prompt.contains("FORBIDDEN") {
-        return Err(open_multi_agent::error::AgentError::Other(
+        return Err(open_multi_agent_rs::error::AgentError::Other(
             "forbidden keyword detected".to_string()
         ));
     }
@@ -90,8 +90,8 @@ or `RunOptions.on_trace`.
 ### Attaching a trace callback
 
 ```rust
-use open_multi_agent::{OrchestratorConfig, OpenMultiAgent};
-use open_multi_agent::types::{TraceEvent, OnTraceFn};
+use open_multi_agent_rs::{OrchestratorConfig, OpenMultiAgent};
+use open_multi_agent_rs::types::{TraceEvent, OnTraceFn};
 use std::sync::Arc;
 
 let on_trace: OnTraceFn = Arc::new(|event| {
@@ -141,7 +141,7 @@ pub struct TraceEventBase {
 ### Generating run IDs
 
 ```rust
-use open_multi_agent::trace::generate_run_id;
+use open_multi_agent_rs::trace::generate_run_id;
 
 let run_id = generate_run_id();  // UUID v4 string
 ```

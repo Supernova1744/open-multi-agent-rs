@@ -1,6 +1,6 @@
 # API Reference
 
-Complete public surface of the `open_multi_agent` crate.
+Complete public surface of the `open_multi_agent_rs` crate.
 
 ---
 
@@ -23,7 +23,7 @@ pub enum AgentError {
 }
 ```
 
-All fallible functions return `open_multi_agent::error::Result<T>`, which is
+All fallible functions return `open_multi_agent_rs::error::Result<T>`, which is
 `std::result::Result<T, AgentError>`.
 
 ---

@@ -9,8 +9,8 @@ callback returns `true` to continue or `false` to stop.
 ```rust
 use futures::future::BoxFuture;
 use std::sync::Arc;
-use open_multi_agent::{OrchestratorConfig, OpenMultiAgent};
-use open_multi_agent::types::Task;
+use open_multi_agent_rs::{OrchestratorConfig, OpenMultiAgent};
+use open_multi_agent_rs::types::Task;
 
 let orchestrator = OpenMultiAgent::new(OrchestratorConfig {
     default_provider: "openrouter".to_string(),

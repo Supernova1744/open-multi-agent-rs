@@ -3,7 +3,7 @@
 ## Module Map
 
 ```
-open_multi_agent
+open_multi_agent_rs
 ├── agent/          Agent state machine + streaming conversation loop
 │   ├── mod.rs      Agent struct, run / prompt / stream / reset
 │   └── runner.rs   AgentRunner — LLM-call → tool-exec → loop (internal)

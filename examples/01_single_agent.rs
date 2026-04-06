@@ -5,7 +5,7 @@
 ///
 /// Run:
 ///   cargo run --example 01_single_agent
-use open_multi_agent::{AgentConfig, OpenMultiAgent, OrchestratorConfig};
+use open_multi_agent_rs::{AgentConfig, OpenMultiAgent, OrchestratorConfig};
 
 fn api_key() -> String {
     dotenvy::dotenv().ok();

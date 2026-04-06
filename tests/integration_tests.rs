@@ -1,7 +1,7 @@
 mod mock_adapter;
 
 use mock_adapter::MockAdapter;
-use open_multi_agent::{
+use open_multi_agent_rs::{
     agent::{pool::AgentPool, Agent},
     create_task,
     error::Result,
@@ -85,10 +85,16 @@ async fn multi_turn_history_is_preserved() {
         MockAdapter::text("4 × 3 = 12"),
     ]);
 
-    let r1 = agent.prompt("What is 2+2?", Arc::clone(&adapter)).await.unwrap();
+    let r1 = agent
+        .prompt("What is 2+2?", Arc::clone(&adapter))
+        .await
+        .unwrap();
     assert_eq!(r1.output, "2 + 2 = 4");
 
-    let r2 = agent.prompt("Multiply that by 3.", Arc::clone(&adapter)).await.unwrap();
+    let r2 = agent
+        .prompt("Multiply that by 3.", Arc::clone(&adapter))
+        .await
+        .unwrap();
     assert_eq!(r2.output, "4 × 3 = 12");
 
     // History: user1, assistant1, user2, assistant2
@@ -110,21 +116,32 @@ async fn agent_reset_clears_history() {
 // Tool call loop
 // ---------------------------------------------------------------------------
 
-use open_multi_agent::tool::Tool;
 use async_trait::async_trait;
-use open_multi_agent::types::ToolUseContext;
+use open_multi_agent_rs::tool::Tool;
+use open_multi_agent_rs::types::ToolUseContext;
 
 struct UpperCaseTool;
 #[async_trait]
 impl Tool for UpperCaseTool {
-    fn name(&self) -> &str { "uppercase" }
-    fn description(&self) -> &str { "Uppercases a string" }
+    fn name(&self) -> &str {
+        "uppercase"
+    }
+    fn description(&self) -> &str {
+        "Uppercases a string"
+    }
     fn input_schema(&self) -> serde_json::Value {
         serde_json::json!({"type":"object","properties":{"text":{"type":"string"}},"required":["text"]})
     }
-    async fn execute(&self, input: &HashMap<String, serde_json::Value>, _ctx: &ToolUseContext) -> Result<open_multi_agent::types::ToolResult> {
+    async fn execute(
+        &self,
+        input: &HashMap<String, serde_json::Value>,
+        _ctx: &ToolUseContext,
+    ) -> Result<open_multi_agent_rs::types::ToolResult> {
         let text = input.get("text").and_then(|v| v.as_str()).unwrap_or("");
-        Ok(open_multi_agent::types::ToolResult { data: text.to_uppercase(), is_error: false })
+        Ok(open_multi_agent_rs::types::ToolResult {
+            data: text.to_uppercase(),
+            is_error: false,
+        })
     }
 }
 
@@ -209,7 +226,11 @@ async fn agent_stops_at_max_turns() {
     ]);
 
     let result = agent.run("loop", adapter).await.unwrap();
-    assert!(result.turns <= 2, "Expected at most 2 turns, got {}", result.turns);
+    assert!(
+        result.turns <= 2,
+        "Expected at most 2 turns, got {}",
+        result.turns
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -236,8 +257,10 @@ async fn agent_pool_limits_concurrency() {
                 peak.fetch_max(n, Ordering::SeqCst);
                 tokio::time::sleep(Duration::from_millis(20)).await;
                 active.fetch_sub(1, Ordering::SeqCst);
-                Ok::<(), open_multi_agent::error::AgentError>(())
-            }).await.unwrap();
+                Ok::<(), open_multi_agent_rs::error::AgentError>(())
+            })
+            .await
+            .unwrap();
         }));
     }
 
@@ -257,7 +280,12 @@ async fn task_queue_pipeline_completes_in_order() {
     let mut q = TaskQueue::new();
     let t1 = create_task("Task A", "Do A", Some("alice".to_string()), vec![]);
     let t1_id = t1.id.clone();
-    let t2 = create_task("Task B", "Do B (needs A)", Some("bob".to_string()), vec![t1_id.clone()]);
+    let t2 = create_task(
+        "Task B",
+        "Do B (needs A)",
+        Some("bob".to_string()),
+        vec![t1_id.clone()],
+    );
     let t2_id = t2.id.clone();
 
     q.add_batch(vec![t1, t2]);
@@ -284,7 +312,8 @@ async fn shared_memory_stores_and_retrieves_results() {
     let store: Arc<dyn MemoryStore> = Arc::new(InMemoryStore::new());
     let sm = SharedMemory::new(store);
 
-    sm.write("researcher", "task-1", "Found: Rust is fast.").await;
+    sm.write("researcher", "task-1", "Found: Rust is fast.")
+        .await;
     sm.write("writer", "task-2", "Written: Blog post.").await;
 
     let md = sm.to_markdown().await;
@@ -303,26 +332,44 @@ async fn shared_memory_stores_and_retrieves_results() {
 async fn e2e_two_task_pipeline_queue_logic() {
     let mut q = TaskQueue::new();
 
-    let t1 = create_task("Research", "Find info", Some("researcher".to_string()), vec![]);
+    let t1 = create_task(
+        "Research",
+        "Find info",
+        Some("researcher".to_string()),
+        vec![],
+    );
     let t1_id = t1.id.clone();
-    let t2 = create_task("Write", "Write report", Some("writer".to_string()), vec![t1_id.clone()]);
+    let t2 = create_task(
+        "Write",
+        "Write report",
+        Some("writer".to_string()),
+        vec![t1_id.clone()],
+    );
     let t2_id = t2.id.clone();
 
     q.add_batch(vec![t1, t2]);
 
     assert_eq!(q.pending_tasks().len(), 1);
     q.set_in_progress(&t1_id).unwrap();
-    q.complete(&t1_id, Some("Rust is memory-safe.".to_string())).unwrap();
+    q.complete(&t1_id, Some("Rust is memory-safe.".to_string()))
+        .unwrap();
 
     assert_eq!(q.pending_tasks().len(), 1);
     assert_eq!(q.pending_tasks()[0].id, t2_id);
 
     q.set_in_progress(&t2_id).unwrap();
-    q.complete(&t2_id, Some("Report written.".to_string())).unwrap();
+    q.complete(&t2_id, Some("Report written.".to_string()))
+        .unwrap();
 
     assert!(q.is_complete());
-    assert_eq!(q.get(&t1_id).unwrap().result.as_deref(), Some("Rust is memory-safe."));
-    assert_eq!(q.get(&t2_id).unwrap().result.as_deref(), Some("Report written."));
+    assert_eq!(
+        q.get(&t1_id).unwrap().result.as_deref(),
+        Some("Rust is memory-safe.")
+    );
+    assert_eq!(
+        q.get(&t2_id).unwrap().result.as_deref(),
+        Some("Report written.")
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -373,15 +420,31 @@ async fn agent_status_transitions_correctly() {
 // Multiple tool calls in a single LLM turn
 // ---------------------------------------------------------------------------
 
-struct CounterTool { counter: Arc<std::sync::atomic::AtomicUsize> }
+struct CounterTool {
+    counter: Arc<std::sync::atomic::AtomicUsize>,
+}
 #[async_trait]
 impl Tool for CounterTool {
-    fn name(&self) -> &str { "counter" }
-    fn description(&self) -> &str { "increments a counter" }
-    fn input_schema(&self) -> serde_json::Value { serde_json::json!({}) }
-    async fn execute(&self, _input: &HashMap<String, serde_json::Value>, _ctx: &ToolUseContext) -> Result<open_multi_agent::types::ToolResult> {
-        self.counter.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-        Ok(open_multi_agent::types::ToolResult { data: "counted".to_string(), is_error: false })
+    fn name(&self) -> &str {
+        "counter"
+    }
+    fn description(&self) -> &str {
+        "increments a counter"
+    }
+    fn input_schema(&self) -> serde_json::Value {
+        serde_json::json!({})
+    }
+    async fn execute(
+        &self,
+        _input: &HashMap<String, serde_json::Value>,
+        _ctx: &ToolUseContext,
+    ) -> Result<open_multi_agent_rs::types::ToolResult> {
+        self.counter
+            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        Ok(open_multi_agent_rs::types::ToolResult {
+            data: "counted".to_string(),
+            is_error: false,
+        })
     }
 }
 
@@ -393,11 +456,21 @@ async fn agent_parallel_tool_calls_in_one_turn() {
     // (MockAdapter returns one at a time, so we chain: 2 tool calls → text)
     let counter = Arc::new(std::sync::atomic::AtomicUsize::new(0));
     let reg = Arc::new(Mutex::new(ToolRegistry::new()));
-    reg.lock().await.register(Arc::new(CounterTool { counter: Arc::clone(&counter) })).unwrap();
+    reg.lock()
+        .await
+        .register(Arc::new(CounterTool {
+            counter: Arc::clone(&counter),
+        }))
+        .unwrap();
     let exec = Arc::new(ToolExecutor::new(Arc::clone(&reg)));
     let mut agent = Agent::new(
-        AgentConfig { name: "bot".to_string(), model: "m".to_string(), ..Default::default() },
-        reg, exec,
+        AgentConfig {
+            name: "bot".to_string(),
+            model: "m".to_string(),
+            ..Default::default()
+        },
+        reg,
+        exec,
     );
 
     // Turn 1: tool call
@@ -445,10 +518,10 @@ async fn token_usage_accumulates_across_prompt_turns() {
     let mut total_out = 0u64;
     for _ in 0..n {
         let r = agent.prompt("hello", Arc::clone(&adapter)).await.unwrap();
-        total_in  += r.token_usage.input_tokens;
+        total_in += r.token_usage.input_tokens;
         total_out += r.token_usage.output_tokens;
     }
     // MockAdapter returns 10 input, 20 output per call
-    assert_eq!(total_in,  (n as u64) * 10);
+    assert_eq!(total_in, (n as u64) * 10);
     assert_eq!(total_out, (n as u64) * 20);
 }
