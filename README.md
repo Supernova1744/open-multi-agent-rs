@@ -51,6 +51,7 @@ A Rust port of [open-multi-agent](https://github.com/JackChen-me/open-multi-agen
   - [MessageBus Tools](#messagebus-tools)
   - [Shell & Search](#shell--search-tools)
   - [Utility Tools](#utility-tools)
+- [Feedback Loop](#feedback-loop)
 - [Examples](#examples)
 - [Architecture Overview](#architecture-overview)
 - [Troubleshooting](#troubleshooting)
@@ -109,6 +110,7 @@ open-multi-agent-rs/
 │   └── tool/
 │       ├── mod.rs               # ToolRegistry + ToolExecutor
 │       └── built_in.rs          # 45 built-in tools (file, python, HTTP, data, RAG, utility, …)
+│   └── feedback.rs              # FeedbackLoop — iterative worker ↔ critic cycle
 ├── examples/
 │   ├── 01_single_agent.rs       # One-shot agent
 │   ├── 02_multi_turn_chat.rs    # Multi-turn conversation
@@ -1037,6 +1039,88 @@ git args="log --oneline -5"
 
 ---
 
+## Feedback Loop
+
+`FeedbackLoop` pairs a **worker** agent with a **critic** agent and runs them in alternating turns until the critic approves or `max_rounds` is reached. Each revision round gives the worker richer context: original task + previous draft + critic feedback.
+
+```
+Round 1:   worker ← original task
+           critic ← worker output
+
+Round 2+:  worker ← original task + previous draft + critic feedback
+           critic ← revised output
+
+Exit when critic satisfies the approval predicate, or max_rounds hit.
+```
+
+### Basic usage
+
+```rust
+use open_multi_agent_rs::FeedbackLoop;
+
+let result = FeedbackLoop::new(writer_config, editor_config)
+    .max_rounds(3)
+    .approval_signal("APPROVED")   // critic must include this word
+    .run(task, registry, executor, adapter)
+    .await?;
+
+println!("approved={} rounds={}", result.approved, result.rounds);
+println!("{}", result.final_output);  // pass this to the next agent
+```
+
+### Custom approval logic
+
+```rust
+// Approve when critic gives a score of 9 or 10
+FeedbackLoop::new(coder_config, reviewer_config)
+    .max_rounds(5)
+    .approve_when(|output| output.contains("score: 9") || output.contains("score: 10"))
+    .on_round(|round, worker_out, critic_out, approved| {
+        println!("Round {round}: approved={approved}");
+    })
+    .run(task, registry, executor, adapter)
+    .await?;
+```
+
+### Four-agent pipeline: A → (B ↔ C) → D
+
+```rust
+// Step 1: A researches
+let result_a = Agent::new(researcher_config, ...).run(topic, adapter).await?;
+
+// Step 2: B writes, C edits — loop until APPROVED
+let result_bc = FeedbackLoop::new(writer_config, editor_config)
+    .max_rounds(3)
+    .approval_signal("APPROVED")
+    .run(&result_a.output, registry, executor, adapter)
+    .await?;
+
+// Step 3: D publishes the approved output
+let result_d = Agent::new(publisher_config, ...).run(&result_bc.final_output, adapter).await?;
+```
+
+### `FeedbackLoopResult` fields
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `final_output` | `String` | Worker's last output — pass to downstream agents |
+| `approved` | `bool` | `true` if critic approved before `max_rounds` |
+| `rounds` | `usize` | How many iterations ran |
+| `history` | `Vec<Round>` | Full transcript for debugging |
+
+Each `Round` has: `round` (1-based), `worker_output`, `critic_output`, `approved`.
+
+### Builder API
+
+| Method | Default | Description |
+|--------|---------|-------------|
+| `max_rounds(n)` | `3` | Maximum iterations (minimum 1) |
+| `approval_signal(s)` | `"APPROVED"` | Approve when critic output contains `s` (case-insensitive) |
+| `approve_when(fn)` | — | Custom closure, overrides `approval_signal` |
+| `on_round(fn)` | — | Callback after each round: `(round, worker_out, critic_out, approved)` |
+
+---
+
 ## Examples
 
 All examples require `OPENROUTER_API_KEY` to be set (add it to a `.env` file or export it).
@@ -1068,6 +1152,27 @@ cargo run --example <name>
 | 18 | `18_bus_agents` | Two agents communicating via `bus_publish` / `bus_read` |
 | 19 | `19_knowledge_base_pipeline` | Full Karpathy LLM knowledge-base pipeline (ingest → compile → RAG → health-check) |
 | 20 | `20_utility_tools` | `sleep`, `random`, `template`, `diff`, `zip`, `git`, `url` in a single agent demo |
+| 21 | `21_karpathy_full_pipeline` | Full 6-stage Karpathy pipeline: ingest → compile → index → stubs → Q&A → health check |
+| 22 | `22_feedback_loop` | Four-agent pipeline A → (B ↔ C) → D with iterative writer/editor feedback loop |
+
+### Example 22 — Feedback Loop: A → (B ↔ C) → D
+
+```bash
+cargo run --example 22_feedback_loop
+```
+
+Four agents run as a linear pipeline. Two of them (writer B and editor C) form a `FeedbackLoop` inside it:
+
+```
+A (Researcher) → research brief
+B (Writer) ↔ C (Editor)   ← up to 3 rounds
+D (Publisher)  → formatted post
+```
+
+- **A** researches the topic and produces a structured brief
+- **B** writes a blog post draft using the brief; **C** reviews and either approves or gives numbered feedback
+- Each revision round B gets: original brief + previous draft + C's feedback
+- **D** receives the approved post and formats it for publication with title, meta description, and tags
 
 ### Example 11 — Python Coding Agent
 

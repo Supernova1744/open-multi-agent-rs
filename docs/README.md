@@ -1,6 +1,6 @@
 # open-multi-agent-rs Documentation
 
-**Version:** 0.1.0  
+**Version:** 0.1.5  
 **Language:** Rust (Edition 2021)  
 **Crate name:** `open_multi_agent_rs`
 
@@ -24,4 +24,8 @@
 | &nbsp;&nbsp;[guides/messaging.md](guides/messaging.md) | MessageBus pub/sub between agents |
 | &nbsp;&nbsp;[guides/retry.md](guides/retry.md) | Retry with exponential backoff |
 | &nbsp;&nbsp;[guides/approval-gates.md](guides/approval-gates.md) | Pipeline approval gates |
-| [examples.md](examples.md) | Annotated walkthrough of all 10 examples |
+| &nbsp;&nbsp;[guides/built-in-tools.md](guides/built-in-tools.md) | All 45 built-in tools — reference and examples |
+| &nbsp;&nbsp;[guides/rag.md](guides/rag.md) | In-process RAG knowledge base |
+| &nbsp;&nbsp;[guides/knowledge-base-pipeline.md](guides/knowledge-base-pipeline.md) | Karpathy LLM knowledge-base pipeline |
+| &nbsp;&nbsp;[guides/feedback-loop.md](guides/feedback-loop.md) | Iterative worker ↔ critic feedback loop |
+| [examples.md](examples.md) | Annotated walkthrough of all 22 examples |

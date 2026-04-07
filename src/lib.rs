@@ -1,5 +1,6 @@
 pub mod agent;
 pub mod error;
+pub mod feedback;
 pub mod llm;
 pub mod memory;
 pub mod messaging;
@@ -80,6 +81,9 @@ pub use tool::built_in::{
     // Utility tools
     SleepTool, RandomTool, TemplateTool, DiffTool, ZipTool, GitTool, UrlTool,
 };
+
+// Feedback loop
+pub use feedback::{FeedbackLoop, FeedbackLoopResult, Round};
 
 // LLM adapters
 pub use llm::{create_adapter, LLMAdapter};

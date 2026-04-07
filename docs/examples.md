@@ -286,3 +286,237 @@ on_approval: Some(Arc::new(move |_completed, _pending| Box::pin(async move {
     round == 0  // approve first round only
 }))),
 ```
+
+---
+
+## 11 — Python Coding Agent
+
+**File:** `examples/11_python_coding_agent.rs`  
+**Run:** `cargo run --example 11_python_coding_agent`
+
+Demonstrates an agent that writes, tests, and self-corrects Python code using the
+`python_write`, `python_run`, and `python_test` built-in tools.
+
+**What it shows:**
+- `python_write` — create `.py` files inside the sandbox
+- `python_run` — execute a script and capture stdout/stderr
+- `python_test` — run pytest and return pass/fail output
+- Self-healing: agent reads test failure output and fixes the code
+
+**Pipeline:**
+```
+python_write calculator.py →
+python_write test_calculator.py →
+python_test test_calculator.py →
+(if fail) python_write fixed → python_test again
+```
+
+---
+
+## 12 — Repository Mindmap
+
+**File:** `examples/12_repo_mindmap.rs`  
+**Run:** `cargo run --example 12_repo_mindmap`
+
+Uses `repo_ingest` to analyse a codebase and write a Mermaid `mindmap` diagram.
+
+**What it shows:**
+- `repo_ingest` — recursively reads a directory tree into a single context string
+- `file_write` — saves the Mermaid diagram to a `.md` file
+- `REPO_PATH` / `OUTPUT_FILE` environment variables for customisation
+
+**Output:** A `.md` file with a `mindmap` diagram renderable in GitHub, VS Code, and Obsidian.
+
+---
+
+## 13 — HTTP Tools
+
+**File:** `examples/13_http_tools.rs`  
+**Run:** `cargo run --example 13_http_tools`
+
+Demonstrates `http_get`, `http_post`, `json_parse`, and `json_transform` against
+the public httpbin.org test service.
+
+**What it shows:**
+- `http_get url='https://httpbin.org/json'` — fetch JSON
+- `json_parse pointer='/slideshow/title'` — extract a nested field
+- `json_transform operation='keys'` — list top-level keys
+- `http_post` with a JSON body and response inspection
+
+---
+
+## 14 — Data Processing Tools
+
+**File:** `examples/14_data_tools.rs`  
+**Run:** `cargo run --example 14_data_tools`
+
+Demonstrates CSV, math, datetime, regex, and text chunking in a single workflow.
+
+**What it shows:**
+- `csv_write` / `csv_read` — create and read a sales CSV file
+- `json_transform` — extract a column from the parsed rows
+- `math_eval` — compute totals with `evalexpr` expressions
+- `datetime` — parse timestamps and compute differences
+- `text_regex` — extract date patterns from free text
+
+---
+
+## 15 — System & Utility Tools
+
+**File:** `examples/15_system_tools.rs`  
+**Run:** `cargo run --example 15_system_tools`
+
+Demonstrates system introspection, encoding, hashing, and cache tools.
+
+**What it shows:**
+- `system_info` — OS, architecture, CPU count, CWD
+- `env_get` — read an allow-listed environment variable
+- `base64 operation='encode'` / `'decode'` — round-trip encoding
+- `hash_file` — FNV-1a 64-bit hash of a file
+- `cache_set` / `cache_get` — in-process key-value store with TTL
+
+---
+
+## 16 — Web Search
+
+**File:** `examples/16_web_search.rs`  
+**Run:** `cargo run --example 16_web_search`  
+**With Tavily:** `TAVILY_API_KEY=tvly-... cargo run --example 16_web_search`
+
+Demonstrates web fetching, search, and schema validation.
+
+**What it shows:**
+- `web_fetch` — retrieves a URL and converts HTML to clean Markdown
+- `tavily_search` — real-time web search (skipped if `TAVILY_API_KEY` is absent)
+- `schema_validate` — validates a JSON value against a JSON Schema
+- Adaptive behaviour based on available environment variables
+
+---
+
+## 17 — RAG Knowledge Base
+
+**File:** `examples/17_rag_knowledge_base.rs`  
+**Run:** `cargo run --example 17_rag_knowledge_base`
+
+Demonstrates in-process retrieval-augmented generation with the full CRUD lifecycle.
+
+**What it shows:**
+- `rag_add id content` — add four documents on different topics
+- `rag_search query top_k=2` — TF-scored retrieval
+- `rag_add` on an existing ID — update a document
+- `rag_clear id` — remove a single document
+- Verifying the removal with another search
+
+---
+
+## 18 — MessageBus Multi-Agent Communication
+
+**File:** `examples/18_bus_agents.rs`  
+**Run:** `cargo run --example 18_bus_agents`
+
+Two agents share a `MessageBus`. Researcher publishes findings; writer reads them
+and broadcasts completion.
+
+**What it shows:**
+- `register_bus_tools(registry, bus)` — inject the bus into the registry
+- `bus_publish from to content` — point-to-point message
+- `bus_read unread_only=true` — read messages addressed to the current agent
+- `bus_publish to='*'` — broadcast to all agents
+
+---
+
+## 19 — Knowledge-Base Pipeline (quick demo)
+
+**File:** `examples/19_knowledge_base_pipeline.rs`  
+**Run:** `cargo run --example 19_knowledge_base_pipeline`
+
+A four-stage skeleton of the Karpathy LLM knowledge-base pipeline using Rust
+documentation as source material.
+
+**Stages:**
+1. **Ingest** — `article_fetch` two Rust docs pages into `raw/`
+2. **Compile** — LLM reads raw files, writes `wiki/` pages with `[[WikiLinks]]`
+3. **Index & Q&A** — `rag_index_dir` + `wikilink_index build` + `rag_search`
+4. **Health** — `wikilink_index orphans` + `grep` + `frontmatter set`
+
+See example 21 for the full six-stage version.
+
+---
+
+## 20 — Utility Tools
+
+**File:** `examples/20_utility_tools.rs`  
+**Run:** `cargo run --example 20_utility_tools`
+
+Exercises all seven utility tools in a single agent session.
+
+**Demonstrates:**
+- `sleep ms=200` — rate-limiting pause
+- `random kind='uuid'` / `'int'` / `'choice'` / `'string'` — random values
+- `template` — `{{variable}}` substitution with strict mode
+- `diff` — unified diff between two multi-line strings
+- `zip` — create, list, extract an archive
+- `git args='status'` — safe git wrapper
+- `url` — parse, build, encode, and resolve URLs
+
+---
+
+## 21 — Full Karpathy Knowledge-Base Pipeline
+
+**File:** `examples/21_karpathy_full_pipeline.rs`  
+**Run:** `cargo run --example 21_karpathy_full_pipeline`  
+**With Tavily:** `TAVILY_API_KEY=tvly-... cargo run --example 21_karpathy_full_pipeline`
+
+The complete six-stage LLM knowledge-base pipeline over five interrelated Wikipedia
+AI/ML articles.
+
+**Stages:**
+
+| # | Name | Key tools |
+|---|------|-----------|
+| 1 | Ingest | `article_fetch`, `image_download`, `file_list` |
+| 2 | Compile | `file_read`, `file_write`, `frontmatter` |
+| 3 | Index & Link Graph | `rag_index_dir`, `wikilink_index` |
+| 4 | Stub Generation | `file_write`, `wikilink_index` |
+| 5 | Multi-Hop Q&A | `rag_search`, `file_read` |
+| 6 | Health Check | `grep`, `frontmatter`, `datetime`, `file_list` |
+
+**Output:** Full wiki in a temp directory (`karpathy_full_kb/`) with main pages,
+auto-generated stubs, Q&A answers, and a health report.
+
+---
+
+## 22 — Feedback Loop: A → (B ↔ C) → D
+
+**File:** `examples/22_feedback_loop.rs`  
+**Run:** `cargo run --example 22_feedback_loop`
+
+A four-agent pipeline where a writer (B) and editor (C) iterate inside a
+`FeedbackLoop` until the editor approves.
+
+**Pipeline:**
+```
+A (Researcher) → research brief
+                       ↓
+             B (Writer) ↔ C (Editor)   ← up to 3 rounds
+                       ↓ approved output
+             D (Publisher) → formatted post
+```
+
+**What it shows:**
+- `FeedbackLoop::new(worker, critic).max_rounds(3).approval_signal("APPROVED")`
+- `.on_round(|round, worker, critic, approved| …)` — per-round progress callback
+- Passing the loop's `final_output` to a downstream agent
+- `FeedbackLoopResult`: `approved`, `rounds`, `history`
+
+**Key code pattern:**
+```rust
+let result_bc = FeedbackLoop::new(agent_b, agent_c)
+    .max_rounds(3)
+    .approval_signal("APPROVED")
+    .on_round(|round, w, c, ok| println!("Round {round}: approved={ok}"))
+    .run(&result_a.output, registry, executor, adapter)
+    .await?;
+
+let result_d = Agent::new(agent_d, ...).run(&result_bc.final_output, adapter).await?;
+```

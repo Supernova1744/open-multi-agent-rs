@@ -1035,6 +1035,160 @@ impl MessageBus {
 
 ---
 
+## Built-in Tools (`tool::built_in`)
+
+### Registration functions
+
+```rust
+/// Register all 45 stateless built-in tools into a ToolRegistry.
+/// Call once after creating the registry, before constructing any agents.
+pub async fn register_built_in_tools(registry: &mut ToolRegistry);
+
+/// Register the two MessageBus-aware tools (bus_publish, bus_read).
+/// Requires an Arc<MessageBus> to inject.
+pub async fn register_bus_tools(registry: &mut ToolRegistry, bus: Arc<MessageBus>);
+```
+
+**Typical setup:**
+```rust
+let registry = Arc::new(Mutex::new(ToolRegistry::new()));
+{
+    let mut reg = registry.lock().await;
+    register_built_in_tools(&mut reg).await;
+    // Optionally add bus tools:
+    // let bus = Arc::new(MessageBus::new());
+    // register_bus_tools(&mut reg, Arc::clone(&bus)).await;
+}
+let executor = Arc::new(ToolExecutor::new(Arc::clone(&registry)));
+```
+
+### Tool name reference
+
+| Tool name | Category | Key inputs |
+|-----------|----------|-----------|
+| `bash` | Shell | `command`, `timeout_ms?` |
+| `file_read` | File | `path` |
+| `file_write` | File | `path`, `content` |
+| `file_update` | File | `path`, `old_text`, `new_text` |
+| `file_delete` | File | `path` |
+| `file_list` | File | `path?`, `recursive?` |
+| `file_move` | File | `from`, `to` |
+| `dir_create` | File | `path` |
+| `dir_delete` | File | `path` |
+| `grep` | Search | `pattern`, `path`, `recursive?` |
+| `python_write` | Python | `filename`, `code` |
+| `python_run` | Python | `filename` |
+| `python_test` | Python | `filename` |
+| `repo_ingest` | Analysis | `path?`, `max_depth?`, `extensions?` |
+| `http_get` | HTTP | `url`, `headers?` |
+| `http_post` | HTTP | `url`, `body?`, `headers?` |
+| `json_parse` | Data | `json`, `pointer?` |
+| `json_transform` | Data | `json`, `operation`, `pointer?` |
+| `csv_read` | Data | `path` |
+| `csv_write` | Data | `path`, `rows` |
+| `math_eval` | Math | `expression` |
+| `datetime` | Time | `operation`, `format?`, `value?`, `unit?` |
+| `text_regex` | Text | `text`, `pattern`, `operation`, `replacement?` |
+| `text_chunk` | Text | `text`, `method`, `size`, `overlap?` |
+| `env_get` | System | `name` |
+| `system_info` | System | — |
+| `cache_set` | Cache | `key`, `value`, `ttl_ms?` |
+| `cache_get` | Cache | `key` |
+| `base64` | Encoding | `operation`, `data` |
+| `hash_file` | Encoding | `path` |
+| `web_fetch` | Web | `url` |
+| `tavily_search` | Web | `query`, `max_results?` |
+| `schema_validate` | Validation | `value`, `schema` |
+| `bus_publish` | Messaging | `from`, `to`, `content` |
+| `bus_read` | Messaging | `unread_only?` |
+| `rag_add` | RAG | `id`, `content`, `metadata?` |
+| `rag_search` | RAG | `query`, `top_k?` |
+| `rag_clear` | RAG | `id?` |
+| `rag_index_dir` | RAG | `path` |
+| `article_fetch` | Pipeline | `url`, `save_path` |
+| `frontmatter` | Pipeline | `operation`, `path`, `key?`, `value?`, `data?` |
+| `wikilink_index` | Pipeline | `operation`, `path?`, `page?` |
+| `image_download` | Pipeline | `url`, `save_path` |
+| `sleep` | Utility | `ms` |
+| `random` | Utility | `kind`, `min?`, `max?`, `items?`, `length?` |
+| `template` | Utility | `template`, `vars`, `strict?` |
+| `diff` | Utility | `a`, `b`, `mode?`, `context?` |
+| `zip` | Utility | `operation`, `archive`, `files?`, `dest?` |
+| `git` | Utility | `args`, `cwd?` |
+| `url` | Utility | `operation`, `url?`, `base?`, `scheme?`, `host?`, `path?`, `query?` |
+
+See [guides/built-in-tools.md](guides/built-in-tools.md) for full per-tool documentation.
+
+---
+
+## Feedback Loop (`feedback`)
+
+### `FeedbackLoop`
+
+```rust
+pub struct FeedbackLoop { /* private */ }
+
+impl FeedbackLoop {
+    /// Create a feedback loop with default settings:
+    /// max_rounds=3, approves when critic output contains "APPROVED".
+    pub fn new(worker: AgentConfig, critic: AgentConfig) -> Self;
+
+    /// Set the maximum number of iterations (minimum 1, default 3).
+    pub fn max_rounds(self, n: usize) -> Self;
+
+    /// Approve when critic output contains `signal` (case-insensitive).
+    pub fn approval_signal(self, signal: &str) -> Self;
+
+    /// Approve using a custom closure. Overrides approval_signal.
+    pub fn approve_when<F>(self, f: F) -> Self
+    where
+        F: Fn(&str) -> bool + Send + Sync + 'static;
+
+    /// Callback invoked after every round:
+    /// fn(round: usize, worker_output: &str, critic_output: &str, approved: bool)
+    pub fn on_round<F>(self, f: F) -> Self
+    where
+        F: Fn(usize, &str, &str, bool) + Send + Sync + 'static;
+
+    /// Run the loop. Returns when critic approves or max_rounds is reached.
+    pub async fn run(
+        self,
+        task: &str,
+        registry: Arc<Mutex<ToolRegistry>>,
+        executor: Arc<ToolExecutor>,
+        adapter: Arc<dyn LLMAdapter>,
+    ) -> Result<FeedbackLoopResult>;
+}
+```
+
+### `FeedbackLoopResult`
+
+```rust
+pub struct FeedbackLoopResult {
+    /// Worker's last output — pass to downstream agents.
+    pub final_output: String,
+    /// true if the critic approved before max_rounds was reached.
+    pub approved: bool,
+    /// Number of rounds that ran.
+    pub rounds: usize,
+    /// Full transcript, one entry per round.
+    pub history: Vec<Round>,
+}
+```
+
+### `Round`
+
+```rust
+pub struct Round {
+    pub round: usize,           // 1-based iteration number
+    pub worker_output: String,  // Worker's output this round
+    pub critic_output: String,  // Critic's evaluation
+    pub approved: bool,         // Whether the critic approved
+}
+```
+
+---
+
 ## Trace / Observability (`trace`)
 
 ```rust

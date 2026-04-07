@@ -12,8 +12,10 @@ open_multi_agent_rs
 │   ├── anthropic.rs  Anthropic Messages API (native tool-use blocks)
 │   ├── openai.rs     OpenAI Chat Completions (tool_calls array)
 │   └── openrouter.rs OpenRouter (OpenAI-compat + SSE streaming)
+├── feedback.rs     FeedbackLoop — iterative worker ↔ critic cycle
 ├── tool/           Tool registry and execution
 │   ├── mod.rs      Tool trait, ToolRegistry, ToolExecutor
+│   └── built_in.rs 45 built-in tools + register_built_in_tools / register_bus_tools
 ├── orchestrator/   Multi-agent coordination
 │   └── mod.rs      OpenMultiAgent, TeamCoordinator, retry helpers
 ├── task/           Task graph and scheduling

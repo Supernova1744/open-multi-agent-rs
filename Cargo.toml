@@ -1,6 +1,6 @@
 [package]
 name = "open-multi-agent-rs"
-version = "0.1.4"
+version = "0.1.5"
 edition = "2021"
 description = "A multi-agent orchestration framework for Rust — streaming LLM calls, tool use, task pipelines, retry, and observability."
 license = "Apache-2.0"
@@ -95,6 +95,14 @@ path = "examples/19_knowledge_base_pipeline.rs"
 [[example]]
 name = "20_utility_tools"
 path = "examples/20_utility_tools.rs"
+
+[[example]]
+name = "21_karpathy_full_pipeline"
+path = "examples/21_karpathy_full_pipeline.rs"
+
+[[example]]
+name = "22_feedback_loop"
+path = "examples/22_feedback_loop.rs"
 
 [dependencies]
 dotenvy = "0.15"
