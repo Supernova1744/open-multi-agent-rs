@@ -1366,3 +1366,9 @@ To use a local model (Ollama):
 const OPENROUTER_BASE_URL: &str = "http://localhost:11434/v1";
 const MODEL: &str = "llama3.2";
 ```
+
+---
+
+## Powered By
+
+This project is powered by **[Tahaluf Al Emarat](https://tahaluf.ai)**.
